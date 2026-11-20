@@ -1,5 +1,6 @@
 package com.aurral.tv.audio;
 
+import com.aurral.tv.audio.SharedQueue.Track;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -47,22 +48,10 @@ public final class PlaybackService extends Service {
     private final Handler main = new Handler(Looper.getMainLooper());
     private MediaSession session;
     private ExoPlayer player;
-    private String server, collection;
+    private String server;
     private Map<String, String> headers = Collections.emptyMap();
 
-    static final class Track {
-        final String id, title, artist, path, album, artwork;
-        final boolean transcode;
-        final long durationMs;
-        Track(String id, String title, String artist, String path, boolean transcode,
-              long durationMs, String album, String artwork) {
-            this.id = id; this.title = title; this.artist = artist;
-            this.path = path; this.transcode = transcode; this.durationMs = durationMs;
-            this.album = album; this.artwork = artwork;
-        }
-    }
-    private List<Track> tracks = Collections.emptyList();
-    private int index;
+    final SharedQueue queue = new SharedQueue();
     private long startAtMs, started;
     private AtomicLong received = new AtomicLong();
     private boolean preparing;
@@ -96,28 +85,66 @@ public final class PlaybackService extends Service {
         });
     }
 
-    Track current() { return tracks.isEmpty() ? null : tracks.get(index); }
-    String collectionId() { return collection; }
+    Track current() { return queue.current(); }
+    String collectionId() { return queue.collectionId; }
     boolean isPlaying() {
         return player != null && error.isEmpty() && player.getPlayWhenReady()
                 && player.getPlaybackState() != Player.STATE_ENDED;
     }
     boolean buffering() { return player != null && player.getPlaybackState() == Player.STATE_BUFFERING; }
     String message() { return error; }
-    boolean canSkip(int step) { return index + step >= 0 && index + step < tracks.size(); }
-    List<Track> upcoming() {
-        if (tracks.isEmpty()) return Collections.emptyList();
-        return tracks.subList(index + 1, Math.min(index + 9, tracks.size()));
-    }
+    boolean canSkip(int step) { return queue.canSkip(step) || (step == 1 && queue.flowId != null); }
+    List<Track> upcoming() { return queue.upcoming(); }
     void playUpcoming(String currentId, String selectedId) {
         if (current() == null || !current().id.equals(currentId)) return;
-        for (int i = index + 1; i < Math.min(index + 9, tracks.size()); i++) {
-            if (tracks.get(i).id.equals(selectedId)) {
-                index = i;
+        for (Track track : queue.upcoming()) {
+            if (track.id.equals(selectedId)) {
+                queue.jump(track.entryId);
                 load(0, true);
                 return;
             }
         }
+    }
+    void validateTracks(List<Track> tracks) {
+        for (Track t : tracks) PlaybackStream.address(server, t.path, t.transcode, 0);
+    }
+    void edit(String sessionId, String action, String entryId, String before, boolean enabled,
+              List<Track> items, String flowId, String flowName, long revision, long position) {
+        queue.checkSession(sessionId);
+        switch (action) {
+            case "move": queue.move(entryId, before); break;
+            case "remove": queue.remove(entryId); break;
+            case "pin": queue.pin(entryId); break;
+            case "jump": queue.jump(entryId); load(0, true); return;
+            case "shuffle": queue.setShuffle(enabled); break;
+            case "append": case "insertNext":
+                validateTracks(items);
+                queue.append(items, action.equals("insertNext"));
+                break;
+            case "flow":
+                validateTracks(items);
+                queue.setFlow(flowId, flowName, items);
+                if (flowId != null && player != null && player.getPlaybackState() == Player.STATE_ENDED
+                        && player.getPlayWhenReady()) skip(1);
+                break;
+            case "seek":
+                if (!current().entryId.equals(entryId) || !canSeek()) throw new IllegalStateException("Track changed");
+                seek(position);
+                return;
+            case "handoffPause":
+                if (revision != queue.revision || !current().entryId.equals(entryId)) throw new IllegalStateException("Queue changed");
+                pause();
+                break;
+            case "pause": pause(); break;
+            case "resume": resume(); break;
+            case "next": case "previous":
+                int step = action.equals("next") ? 1 : -1;
+                if (!canSkip(step)) throw new IllegalStateException("End of queue");
+                skip(step);
+                return;
+            default: throw new IllegalArgumentException("Unknown queue command");
+        }
+        refresh();
     }
     long positionMs() { return current() == null || player == null ? 0 : startAtMs + Math.max(0, player.getCurrentPosition()); }
     long durationMs() {
@@ -165,10 +192,8 @@ public final class PlaybackService extends Service {
         // Reject any invalid item before replacing the existing queue.
         for (Track t : queue) PlaybackStream.address(serverUrl, t.path, t.transcode, 0);
         server = serverUrl;
-        collection = collectionId;
         headers = new HashMap<>(credentials);
-        tracks = queue;
-        index = start;
+        this.queue.replace(collectionId, queue, start);
         createPlayer();
         startService(new Intent(this, PlaybackService.class));
         session.setActive(true);
@@ -237,7 +262,8 @@ public final class PlaybackService extends Service {
     }
     void skip(int step) {
         if (!canSkip(step)) return;
-        index += step;
+        if (step == 1) { if (!queue.advance()) return; }
+        else queue.goTo(queue.index + step);
         load(0, true);
     }
 
@@ -274,12 +300,10 @@ public final class PlaybackService extends Service {
 
     void clear() {
         main.removeCallbacks(progress);
-        tracks = Collections.emptyList();
+        queue.clear();
         if (player != null) { player.release(); player = null; }
         server = null;
-        collection = null;
         headers = Collections.emptyMap();
-        index = 0;
         startAtMs = 0;
         preparing = false;
         error = "";

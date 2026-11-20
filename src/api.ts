@@ -1,7 +1,7 @@
 import { fetch } from 'expo/fetch';
 import { proxyHeaders, serverAddress, serverResource, type Connection, type Setup } from './connection';
 
-import { albumArtworkPath, exactLibraryCover, playlistTracks, publicAlbumImage } from './playlistStreams';
+import { albumArtworkPath, catalogAlbumImage, exactLibraryCover, playlistTracks, publicAlbumImage } from './playlistStreams';
 export type { Track } from './playlistStreams';
 
 export type Collection = {
@@ -34,9 +34,9 @@ export async function pair(setup: Setup): Promise<Connection> {
   return { serverUrl, customHeaders, token, ...(setup.remoteKey && { remoteKey: setup.remoteKey }) };
 }
 
-async function get(session: Connection, path: string) {
+async function get(session: Connection, path: string, signal?: AbortSignal) {
   const {uri, headers} = serverResource(session, path);
-  return (await request(uri, headers)).json();
+  return (await request(uri, headers, undefined, signal)).json();
 }
 
 export async function accountId(session: Connection): Promise<number> {
@@ -46,10 +46,10 @@ export async function accountId(session: Connection): Promise<number> {
   return id;
 }
 
-export async function collections(session: Connection): Promise<Collection[]> {
+export async function collections(session: Connection, signal?: AbortSignal): Promise<Collection[]> {
   const [data, health] = await Promise.all([
-    get(session, '/api/playlists/status'),
-    get(session, '/api/health/bootstrap').catch(() => null),
+    get(session, '/api/playlists/status', signal),
+    get(session, '/api/health/bootstrap', signal).catch(() => null),
   ]);
   const streamTranscoding = Array.isArray(health?.api?.features) && health.api.features.includes('streamTranscoding');
   return [
@@ -62,8 +62,8 @@ export async function collections(session: Connection): Promise<Collection[]> {
   ];
 }
 
-export async function tracks(session: Connection, collection: Collection) {
-  const data = await get(session, '/api/playlists/jobs/' + encodeURIComponent(collection.id));
+export async function tracks(session: Connection, collection: Collection, signal?: AbortSignal) {
+  const data = await get(session, '/api/playlists/jobs/' + encodeURIComponent(collection.id), signal);
   return playlistTracks(data, collection.streamTranscoding === true);
 }
 
@@ -86,6 +86,10 @@ export async function trackCover(session: Connection, artworkPath: string, signa
   const serverPrefix = session.serverUrl + '/api/';
   const local = albumArtworkPath(raw.startsWith(serverPrefix) ? raw.slice(session.serverUrl.length) : raw);
   if (local && !local.startsWith('/api/artists/release-group/')) return fetchCover(session, local, signal);
+  return fetchPublicCover(raw, signal);
+}
+
+async function fetchPublicCover(raw: string, signal: AbortSignal) {
   let url = publicAlbumImage(raw);
   for (let attempt = 0; url && attempt < 4; attempt++) {
     const response = await fetch(url, { credentials: 'omit', redirect: 'manual', signal });
@@ -105,7 +109,19 @@ export async function libraryAlbumCover(session: Connection, artist: string, alb
   const result = await request(resource.uri + '?' + params, resource.headers, undefined, signal);
   const page = await result.json();
   const path = exactLibraryCover(page?.albums, artist, album);
-  return path ? fetchCover(session, path, signal) : null;
+  if (path) {
+    try {
+      const cover = await fetchCover(session, path, signal);
+      if (cover) return cover;
+    } catch (error) {
+      if (signal.aborted || error instanceof ExpiredSession) throw error;
+    }
+  }
+  const catalog = serverResource(session, '/api/search/unified');
+  const query = new URLSearchParams({ q: artist + ' ' + album, limit: '12' });
+  const response = await request(catalog.uri + '?' + query, catalog.headers, undefined, signal);
+  const image = catalogAlbumImage((await response.json())?.tracks, artist, album);
+  return image ? fetchPublicCover(image, signal) : null;
 }
 
 async function fetchCover(session: Connection, path: string, signal: AbortSignal) {

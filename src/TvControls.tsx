@@ -30,6 +30,14 @@ const paths = {
   sound: 'M4 11v3 M8 6v13 M12 3v18 M16 8v9 M20 10v4',
   phone: 'M7 3h10v18H7z M11 17h2',
   code: 'M4 7h16v11H4z M7 11h1 M11 11h1 M15 11h1 M9 14h6',
+  queue: 'M3 6h16 M3 11h16 M3 16h8 M15 14l5 3-5 3z',
+  shuffle: 'M3 6h3c5 0 6 12 12 12h3 M17 14l4 4-4 4 M3 18h3c2 0 4-3 5-5 M14 8c1-1 2-2 4-2h3 M17 2l4 4-4 4',
+  flow: 'M2 13h3c2 0 2-7 4-7s2 12 5 12 2-8 5-8h3',
+  up: 'M5 14l7-7 7 7',
+  down: 'M5 10l7 7 7-7',
+  remove: 'M4 7h16 M9 7V4h6v3 M6 7l1 13h10l1-13 M10 11v5 M14 11v5',
+  check: 'M4 12l5 5L20 6',
+  settings: 'M4 7h3 M11 7h9 M4 17h9 M17 17h3 M7 4h4v6H7z M13 14h4v6h-4z',
 } as const;
 export type IconName = keyof typeof paths;
 export function Icon({ name, size = 19, tint = color.ink }: { name: IconName; size?: number; tint?: string }) {
@@ -64,6 +72,7 @@ export function Button({
   primary,
   iconOnly,
   nextFocusDown,
+  focusRef,
   disabled,
 }: {
   label: string;
@@ -73,17 +82,20 @@ export function Button({
   primary?: boolean;
   iconOnly?: boolean;
   nextFocusDown?: number;
+  focusRef?: React.Ref<React.ComponentRef<typeof Pressable>>;
   disabled?: boolean;
 }) {
   const [focus, setFocus] = useState(false);
-  const tint = focus || primary ? color.dark : color.ink;
+  const tint = primary && !focus ? color.dark : color.ink;
   return (
     <Pressable
+      ref={focusRef}
       accessibilityRole="button"
       accessibilityLabel={label}
       hasTVPreferredFocus={preferred}
       nextFocusDown={nextFocusDown}
       disabled={disabled}
+      focusable={!disabled}
       onPress={onPress}
       onFocus={() => setFocus(true)}
       onBlur={() => setFocus(false)}
@@ -167,12 +179,18 @@ export function Artwork({
   flow,
   size,
   track,
+  backdrop,
+  hideMissing,
+  fitHeight,
 }: {
   session: Connection;
   id: string;
   flow?: boolean;
   size: number;
   track?: CoverTrack;
+  backdrop?: boolean;
+  hideMissing?: boolean;
+  fitHeight?: boolean;
 }) {
   const identity = JSON.stringify(artworkCandidates(id, track));
   const [loaded, setLoaded] = useState<{session: Connection; identity: string; uri: string; next: () => void} | null>(null);
@@ -210,14 +228,23 @@ export function Artwork({
   }, [session, identity]);
   const image = loaded?.session === session && loaded.identity === identity ? loaded : null;
   const sleeve = track ? (track.albumName ? track.artist + ':' + track.albumName : track.id || 'song') : id;
+  if (hideMissing && !image) return null;
+  const initials = (track?.artist || track?.albumName || '♪').trim().split(/\s+/u).slice(0, 2)
+    .map(word => Array.from(word)[0]).join('').toUpperCase();
   return (
-    <View style={[s.cover, { width: size, height: size }]} accessible={false}>
-      <Sleeve id={sleeve} flow={flow} />
+    <View style={backdrop ? [StyleSheet.absoluteFill, { backgroundColor: palette(sleeve)[2] }] :
+      [s.cover, fitHeight ? { height: '100%', maxHeight: size, maxWidth: size, aspectRatio: 1 } :
+        { width: size, height: size }]} accessible={false}>
+      {!backdrop && (track ?
+        <View style={[s.monogram, { backgroundColor: palette(sleeve)[2] }]}>
+          <Text style={{color: palette(sleeve)[0], fontSize: size * 0.34, fontWeight: '700'}}>{initials}</Text>
+        </View> : <Sleeve id={sleeve} flow={flow} />)}
       {image && (
         <Image
           source={{ uri: image.uri }}
           style={s.image}
           resizeMode="cover"
+          blurRadius={backdrop ? 4 : 0}
           onError={image.next}
           onLoad={({ nativeEvent: { source } }) => {
             if (source.width === 1 && source.height === 1) image.next();
@@ -246,18 +273,19 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 7,
-    borderRadius: 24,
+    borderRadius: 6,
     paddingHorizontal: 14,
     minHeight: 39,
     borderWidth: 2,
     borderColor: 'transparent',
-    backgroundColor: color.surface,
+    backgroundColor: 'transparent',
   },
   iconButton: { width: 48, height: 48, borderRadius: 30, paddingHorizontal: 0 },
   buttonText: { fontSize: 15, fontWeight: '600' },
-  primary: { backgroundColor: color.lime },
-  focus: { backgroundColor: color.ink, borderColor: color.ink },
+  primary: { backgroundColor: color.ink },
+  focus: { borderColor: color.lime, backgroundColor: color.raised },
   disabled: { opacity: 0.4 },
-  cover: { borderRadius: 9, overflow: 'hidden', backgroundColor: color.surface },
+  cover: { borderRadius: 3, overflow: 'hidden', backgroundColor: color.surface },
+  monogram: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   image: { position: 'absolute', width: '100%', height: '100%' },
 });

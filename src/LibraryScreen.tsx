@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { FlatList, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import type { Collection, Track } from './api';
 import type { Connection } from './connection';
 import { Artwork, color, Icon, timeLabel } from './TvControls';
@@ -9,14 +9,12 @@ function CollectionCard({
   item,
   size,
   preferred,
-  onFocus,
   onOpen,
 }: {
   session: Connection;
   item: Collection;
   size: number;
   preferred: boolean;
-  onFocus: (item: Collection) => void;
   onOpen: (item: Collection) => void;
 }) {
   const [focused, setFocused] = useState(false);
@@ -25,10 +23,7 @@ function CollectionCard({
       accessibilityRole="button"
       accessibilityLabel={item.name + ', ' + item.kind}
       hasTVPreferredFocus={preferred}
-      onFocus={() => {
-        setFocused(true);
-        onFocus(item);
-      }}
+      onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       onPress={() => onOpen(item)}
       style={{ width: size + 18 }}
@@ -49,7 +44,6 @@ function Shelf({
   size,
   preferredId,
   session,
-  onFocus,
   onOpen,
 }: {
   title: string;
@@ -57,7 +51,6 @@ function Shelf({
   size: number;
   preferredId?: string;
   session: Connection;
-  onFocus: (item: Collection) => void;
   onOpen: (item: Collection) => void;
 }) {
   if (!items.length) return null;
@@ -88,7 +81,6 @@ function Shelf({
             item={item}
             size={size}
             preferred={item.id === preferredId}
-            onFocus={onFocus}
             onOpen={onOpen}
           />
         )}
@@ -112,54 +104,23 @@ export function Library({
   const playlists = useMemo(() => items.filter((item) => item.kind === 'Playlist'), [items]);
   const flows = useMemo(() => items.filter((item) => item.kind === 'Flow'), [items]);
   const first = (last && items.find((item) => item.kind === last.kind && item.id === last.id)) || items[0];
-  const [focus, setFocus] = useState<Collection | null>(null);
-  const hero = focus || first;
-  if (!hero)
+  if (!first)
     return (
       <View style={s.empty}>
         <Text style={s.heading}>Your library is empty</Text>
         <Text style={s.secondary}>Save a playlist or create a Flow in Aurral to see it here.</Text>
       </View>
     );
-  const heroSize = Math.round(Math.min(width * 0.29, height * 0.46, 360));
-  const cardSize = Math.round(
-    Math.min(width * 0.18, height * (playlists.length && flows.length ? 0.225 : 0.31), 204),
-  );
+  // Leave the next artwork peeking in at the edge when a shelf overflows.
+  const shelfHeight = playlists.length && flows.length ? Math.max(70, (height - 250) / 2) : height * 0.32;
+  const cardSize = Math.round(Math.min(width * 0.166, shelfHeight, 210));
   return (
-    <View style={s.columns}>
-      <View style={[s.spotlight, { width: heroSize + 8 }]}>
-        <Artwork session={session} id={hero.id} size={heroSize} flow={hero.kind === 'Flow'} />
-        <Text style={s.kind}>{hero.kind.toUpperCase()}</Text>
-        <Text numberOfLines={2} style={s.heroTitle}>
-          {hero.name}
-        </Text>
-        {!!hero.description && (
-          <Text numberOfLines={2} style={s.secondary}>
-            {hero.description}
-          </Text>
-        )}
-      </View>
-      <View style={s.shelves}>
-        <Shelf
-          title="Playlists"
-          items={playlists}
-          size={cardSize}
-          session={session}
-          preferredId={first.kind === 'Playlist' ? first.id : undefined}
-          onFocus={setFocus}
-          onOpen={onOpen}
-        />
-        <Shelf
-          title="Flows"
-          items={flows}
-          size={cardSize}
-          session={session}
-          preferredId={first.kind === 'Flow' ? first.id : undefined}
-          onFocus={setFocus}
-          onOpen={onOpen}
-        />
-      </View>
-    </View>
+    <ScrollView style={s.library} contentContainerStyle={s.homeShelves} showsVerticalScrollIndicator={false}>
+      <Shelf title="Playlists" items={playlists} size={cardSize} session={session}
+        preferredId={first.kind === 'Playlist' ? first.id : undefined} onOpen={onOpen} />
+      <Shelf title="Flows" items={flows} size={cardSize} session={session}
+        preferredId={first.kind === 'Flow' ? first.id : undefined} onOpen={onOpen} />
+    </ScrollView>
   );
 }
 
@@ -277,12 +238,13 @@ const s = StyleSheet.create({
   heroTitle: { color: color.ink, fontSize: 30, lineHeight: 33, fontWeight: '800', letterSpacing: -1 },
   kind: { color: color.lime, fontWeight: '700', letterSpacing: 1.8, fontSize: 11, marginTop: 7 },
   secondary: { fontSize: 16, color: color.secondary, lineHeight: 21 },
-  shelves: { flex: 1, gap: 12, justifyContent: 'center' },
+  library: { flex: 1 },
+  homeShelves: { gap: 16, paddingTop: 14, paddingBottom: 18 },
   shelf: { gap: 5 },
   shelfHeading: { flexDirection: 'row', alignItems: 'baseline', gap: 9, paddingLeft: 4 },
   heading: { color: color.ink, fontSize: 24, lineHeight: 30, letterSpacing: -0.7, fontWeight: '700' },
   shelfCount: { color: color.muted, fontSize: 14, fontWeight: '600' },
-  frame: { alignSelf: 'flex-start', borderWidth: 2, borderColor: 'transparent', padding: 2, borderRadius: 13 },
+  frame: { alignSelf: 'flex-start', borderWidth: 2, borderColor: 'transparent', padding: 2, borderRadius: 6 },
   frameFocused: { borderColor: color.lime },
   cardName: {
     color: color.secondary,

@@ -23,6 +23,22 @@ class QueueItem : Record {
     @Field val artworkPath: String? = null
 }
 
+class QueueChange : Record {
+    @Field val sessionId: String = ""
+    @Field val action: String = ""
+    @Field val entryId: String? = null
+    @Field val beforeEntryId: String? = null
+    @Field val enabled: Boolean = false
+    @Field val items: List<QueueItem> = emptyList()
+    @Field val flowId: String? = null
+    @Field val flowName: String? = null
+    @Field val revision: Double = -1.0
+    @Field val positionMs: Double = 0.0
+}
+
+private fun QueueItem.toTrack() = SharedQueue.Track(id, title, artist, streamPath, transcode,
+    durationMs?.toLong() ?: 0L, albumName, artworkPath)
+
 class AurralAudioModule : Module() {
     private var service: PlaybackService? = null
     private var boundContext: Context? = null
@@ -37,17 +53,34 @@ class AurralAudioModule : Module() {
         override fun onServiceDisconnected(name: ComponentName) { service = null }
     }
 
+    private fun entry(track: SharedQueue.Track): Map<String, Any?> = mapOf(
+        "entryId" to track.entryId, "id" to track.id, "artist" to track.artist, "title" to track.title,
+        "artworkPath" to track.artwork, "albumName" to track.album, "durationMs" to track.durationMs.takeIf { it > 0 },
+        "streamPath" to track.path, "transcode" to track.transcode, "pinned" to (service?.queue?.isPinned(track) == true))
+
+    private fun queueState(offset: Int, limit: Int): Map<String, Any?> {
+        val all = service?.queue?.entries().orEmpty()
+        require(offset in 0..all.size && limit >= 0)
+        val count = minOf(all.size - offset, limit)
+        return snapshot() + mapOf("offset" to offset, "entries" to all.subList(offset, offset + count).map(::entry))
+    }
+
     private fun snapshot(): Map<String, Any?> {
         val playback = service
         val track = playback?.current()
-        return mapOf("id" to track?.id, "title" to track?.title, "artist" to track?.artist,
+        val queue = playback?.queue
+        return mapOf("sessionId" to queue?.sessionId, "revision" to (queue?.revision ?: 0L),
+            "currentEntryId" to track?.entryId, "shuffle" to (queue?.shuffle == true),
+            "flowId" to queue?.flowId, "flowName" to queue?.flowName,
+            "total" to (queue?.entries()?.size ?: 0), "index" to (queue?.index ?: -1),
+            "id" to track?.id, "title" to track?.title, "artist" to track?.artist,
             "collectionId" to playback?.collectionId(), "playing" to (playback?.isPlaying ?: false),
             "previous" to (playback?.canSkip(-1) ?: false), "next" to (playback?.canSkip(1) ?: false),
             "message" to playback?.message(), "buffering" to (playback?.buffering() == true),
             "durationMs" to playback?.durationMs()?.takeIf { it > 0 }, "positionMs" to (playback?.positionMs() ?: 0L),
             "canSeek" to (playback?.canSeek() == true), "albumName" to track?.album, "artworkPath" to track?.artwork,
             "upNext" to playback?.upcoming().orEmpty().map {
-                mapOf("id" to it.id, "title" to it.title, "artist" to it.artist,
+                mapOf("entryId" to it.entryId, "id" to it.id, "title" to it.title, "artist" to it.artist,
                     "albumName" to it.album, "artworkPath" to it.artwork)
             })
     }
@@ -69,12 +102,17 @@ class AurralAudioModule : Module() {
             }
         }.runOnQueue(Queues.MAIN)
         AsyncFunction("state") { snapshot() }.runOnQueue(Queues.MAIN)
+        AsyncFunction("queueState") { queueState(0, Int.MAX_VALUE) }.runOnQueue(Queues.MAIN)
+        AsyncFunction("queuePage") { offset: Int, limit: Int -> queueState(offset, limit) }.runOnQueue(Queues.MAIN)
+        AsyncFunction("editQueue") { edit: QueueChange ->
+            require(edit.positionMs.isFinite() && edit.positionMs >= 0)
+            requireNotNull(service).edit(edit.sessionId, edit.action, edit.entryId, edit.beforeEntryId,
+                edit.enabled, edit.items.map { it.toTrack() }, edit.flowId, edit.flowName,
+                edit.revision.toLong(), edit.positionMs.toLong())
+        }.runOnQueue(Queues.MAIN)
         AsyncFunction("play") { server: String, headers: Map<String, String>, collection: String, items: List<QueueItem>, start: Int, positionMs: Double ->
             require(start in items.indices && positionMs.isFinite() && positionMs >= 0)
-            val tracks = items.map {
-                PlaybackService.Track(it.id, it.title, it.artist, it.streamPath, it.transcode,
-                    it.durationMs?.toLong() ?: 0L, it.albumName, it.artworkPath)
-            }
+            val tracks = items.map { it.toTrack() }
             requireNotNull(service).play(server, headers, collection, tracks, start, positionMs.toLong())
         }.runOnQueue(Queues.MAIN)
         AsyncFunction("pause") { service?.pause() }.runOnQueue(Queues.MAIN)

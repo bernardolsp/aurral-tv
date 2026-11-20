@@ -1,18 +1,35 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as api from './src/api';
 import { audio, play, type Playback } from './src/audio';
 import { serverAddress, type Connection, type Setup } from './src/connection';
 import { clearSession, getSession, saveSession } from './src/session';
 import { CollectionDetails, Library } from './src/LibraryScreen';
 import PlayerScreen from './src/PlayerScreen';
+import { FlowPicker, QueueScreen } from './src/QueueScreen';
 import SetupScreen from './src/SetupScreen';
-import { Brand, Button, color } from './src/TvControls';
+import { Artwork, Brand, Button, Icon, color } from './src/TvControls';
 import { usePocketRemote } from './src/usePocketRemote';
 
-type Page = 'home' | 'tracks' | 'player' | 'remote';
+type Page = 'home' | 'tracks' | 'player' | 'queue' | 'flows' | 'remote' | 'settings';
 function message(e: unknown) {
   return e instanceof Error ? e.message : 'Could not reach Aurral.';
+}
+
+function ReturnToPlayer({session, playback, onPress}: {
+  session: Connection; playback: Playback; onPress: () => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  return <Pressable accessibilityRole="button" accessibilityLabel={'Now playing, ' + (playback.title || 'Unknown title')}
+    onPress={onPress} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+    style={[s.playerLink, focused && s.playerLinkFocus]}>
+    <Artwork session={session} id={playback.collectionId ?? 'pocket-queue'} size={34} track={playback} />
+    <View style={s.nowPlayingCopy}>
+      <Text numberOfLines={1} style={s.nowPlayingTitle}>{playback.title || 'Unknown title'}</Text>
+      <Text numberOfLines={1} style={s.nowPlayingArtist}>{playback.artist}</Text>
+    </View>
+    <Icon name={playback.playing ? 'sound' : 'pause'} tint={color.lime} size={16} />
+  </Pressable>;
 }
 
 export default function App() {
@@ -118,6 +135,11 @@ export default function App() {
   }, [session, selected, page, revision, forget]);
 
   const back = useCallback(() => {
+    setError('');
+    if (page === 'flows' || page === 'queue') {
+      setPage(page === 'flows' ? 'queue' : 'player');
+      return true;
+    }
     if (page === 'player') {
       setPage(parent);
       return true;
@@ -192,48 +214,45 @@ export default function App() {
   if (!session || page === 'remote')
     return <SetupScreen onPair={pair} remote={!!session} onBack={session ? back : undefined} />;
   const currentCollection = catalog.find((c) => c.id === playback?.collectionId);
+  if (page === 'player' && playback?.id)
+    return <PlayerScreen session={session} playback={playback} fromPocket={fromPocket}
+      collection={currentCollection} error={error} transport={transport} onBack={back}
+      onOpenQueue={() => setPage('queue')} />;
+  const libraryPage = page === 'home' || page === 'tracks';
   return (
     <View style={s.screen}>
       <View style={s.header}>
         <Brand />
         <View style={s.actions}>
           {page !== 'home' && <Button label="Back" icon="back" onPress={back} />}
-          {page !== 'player' && playback?.id && (
-            <Button
-              label="Now playing"
-              icon="sound"
+          {libraryPage && playback?.id && (
+            <ReturnToPlayer
+              session={session} playback={playback}
               onPress={() => {
                 setParent(page === 'tracks' ? 'tracks' : 'home');
                 setPage('player');
               }}
             />
           )}
-          {page !== 'player' && (
+          {libraryPage && (
             <Button label="Refresh" icon="refresh" iconOnly onPress={() => setRevision((n) => n + 1)} />
           )}
-          {page === 'home' && (
-            <>
-              <Button label="Pair Pocket remote" icon="phone" onPress={() => setPage('remote')} />
-              <Button label="Disconnect" icon="disconnect" onPress={() => transport(forget(false))} />
-            </>
-          )}
+          {page === 'home' && <Button label="Settings" icon="settings" iconOnly onPress={() => setPage('settings')} />}
         </View>
       </View>
-      {page === 'player' ? (
-        playback?.id ? (
-          <PlayerScreen
-            session={session}
-            playback={playback}
-            fromPocket={fromPocket}
-            collection={currentCollection}
-            error={error}
-            transport={transport}
-          />
-        ) : (
-          <View style={s.center}>
-            <Text style={s.status}>{error || 'Nothing playing'}</Text>
-          </View>
-        )
+      {page === 'settings' ? (
+        <View style={s.settings}>
+          <Text accessibilityRole="header" style={s.heading}>Settings</Text>
+          <Button preferred label="Pair Pocket remote" icon="phone" onPress={() => setPage('remote')} />
+          <Button label="Disconnect" icon="disconnect" onPress={() => transport(forget(false))} />
+          {!!error && <Text style={s.notice}>{error}</Text>}
+        </View>
+      ) : page === 'queue' && playback?.id ? (
+        <QueueScreen session={session} playback={playback} onOpenFlows={() => setPage('flows')} />
+      ) : page === 'flows' && playback?.id ? (
+        <FlowPicker session={session} playback={playback} onDone={() => setPage('queue')} />
+      ) : !libraryPage ? (
+        <View style={s.center}><Text style={s.status}>{error || 'Nothing playing'}</Text></View>
       ) : busy ? (
         <View style={s.center}>
           <ActivityIndicator accessibilityLabel="Loading library" color={color.lime} />
@@ -284,6 +303,14 @@ const s = StyleSheet.create({
     borderBottomColor: color.border,
   },
   actions: { flexDirection: 'row', gap: 7, alignItems: 'center' },
+  playerLink: { flexDirection: 'row', height: 46, gap: 8, alignItems: 'center', paddingHorizontal: 6,
+    borderRadius: 5, borderWidth: 2, borderColor: 'transparent' },
+  playerLinkFocus: { borderColor: color.lime, backgroundColor: color.raised },
+  nowPlayingCopy: { maxWidth: 188 },
+  nowPlayingTitle: { color: color.ink, fontWeight: '600', fontSize: 14 },
+  nowPlayingArtist: { color: color.secondary, fontSize: 12 },
   notice: { color: color.error, fontSize: 17 },
   status: { color: color.secondary, fontSize: 18 },
+  settings: { paddingTop: 24, gap: 12, alignItems: 'flex-start' },
+  heading: { color: color.ink, fontSize: 30, fontWeight: '700' },
 });

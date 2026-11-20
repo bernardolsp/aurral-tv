@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { albumArtworkPath, artworkCandidates, exactLibraryCover, playlistTracks, publicAlbumImage } from '../src/playlistStreams.ts';
+import { albumArtworkPath, artworkCandidates, catalogAlbumImage, exactLibraryCover, playlistTracks, publicAlbumImage } from '../src/playlistStreams.ts';
 
 test('playlist and flow streams select MP3 320 for capable servers and skip unplayable rows', () => {
   const done = { id: 'flow job 1', status: 'done', albumName: 'Album', durationMs: 1234 };
@@ -59,4 +59,15 @@ test('credential-free cover requests constrain all redirect destinations to know
   for (const url of ['http://coverartarchive.org/release/id/front', 'https://169.254.1.1/a', '//192.168.0.1/admin','https://coverartarchive.org.evil.test/release/id', 'https://i.scdn.co:444/image/x', 'https://user:pass@i.scdn.co/image/x']) {
     assert.equal(publicAlbumImage(url,base), null);
   }
+});
+
+test('downloaded songs without a library album resolve only one matching catalog edition', () => {
+  const url = 'https://cdn-images.dzcdn.net/images/cover/example/500x500.jpg';
+  const hit = { artistName: 'Vespas Mandarinas', albumTitle: 'Animal Nacional (Deluxe Edition)', deezerAlbumId: '11', coverUrl: url };
+  const lookup = (hits: unknown[]) => catalogAlbumImage(hits, hit.artistName, hit.albumTitle);
+  assert.equal(lookup([hit, hit]), url);
+  assert.equal(lookup([{...hit, albumTitle: 'Animal Nacional'}]), null);
+  assert.equal(lookup([{...hit, artistName: 'Another artist'}]), null);
+  assert.equal(lookup([hit, {...hit, deezerAlbumId:'22'}]), null);
+  assert.equal(lookup([{...hit, coverUrl: 'http://127.0.0.1/cover'}]), null);
 });

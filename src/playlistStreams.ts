@@ -78,6 +78,20 @@ export function publicAlbumImage(input: unknown, base?: string): string | null {
   return null;
 }
 
+// Unified search includes provider track hits even when a downloaded playlist
+// album has no MusicBrainz identifier or entry in the local library index.
+export function catalogAlbumImage(hits: unknown, artist: string, album: string): string | null {
+  if (!Array.isArray(hits)) return null;
+  const matches = new Map<string, string>();
+  for (const hit of hits) {
+    if (albumNameKey(hit?.artistName) !== albumNameKey(artist) ||
+        albumNameKey(hit?.albumTitle) !== albumNameKey(album)) continue;
+    const url = publicAlbumImage(hit.coverUrl);
+    if (url) matches.set(String(hit.deezerAlbumId ?? url), url);
+  }
+  return matches.size === 1 ? [...matches.values()][0] : null;
+}
+
 export type CoverTrack = { id: string | null; artist: string | null; albumName: string | null; artworkPath: string | null };
 
 export function artworkCandidates(collectionId: string, track?: CoverTrack) {

@@ -6,7 +6,8 @@ import type { Connection } from './connection';
 import type { Track } from './api';
 import { albumArtworkPath } from './playlistStreams';
 import { audioStreamPath } from './connection';
-import { audio, play } from './audio';
+import { audio, play, editQueue } from './audio';
+import { queueEdit, snapshotPage } from './sharedQueueWire';
 import { openRemote, sealRemote } from './remoteEnvelope';
 
 type RemoteModule = {
@@ -68,7 +69,6 @@ export function usePocketRemote(
     const remoteKey = session?.remoteKey;
     if (!session || !remoteKey) return;
     let active = true;
-    let handling = false;
     const onState = (state: string) => {
       if (state === 'active') void receiver.start().catch(() => {});
       else void receiver.stop().catch(() => {});
@@ -76,15 +76,13 @@ export function usePocketRemote(
     async function receive({ challenge, body }: { challenge: string; body: string }) {
       if (!active || !session || !remoteKey) return;
       let answer = '';
-      let claimed = false;
       try {
         const raw = openRemote(body, remoteKey) as Record<string, unknown> | null;
         if (!raw || raw.v !== 1 || raw.kind !== 'command' || raw.challenge !== challenge)
           throw new Error();
         try {
-          if (handling || !active) throw new Error();
-          handling = true;
-          claimed = true;
+          if (!active) throw new Error();
+          let snapshot;
           if (raw.action === 'play') {
             if (!Array.isArray(raw.tracks) || raw.tracks.length < 1 || raw.tracks.length > 100)
               throw new Error();
@@ -109,6 +107,10 @@ export function usePocketRemote(
               throw new Error();
             await play(session, id || 'pocket-queue', queue, index, positionMs);
             if (active) show.current(id || null);
+          } else if (raw.action === 'snapshot') {
+            snapshot = await snapshotPage(raw, (offset, limit) => audio.queuePage(offset, limit));
+          } else if (raw.sessionId !== undefined) {
+            await editQueue(session, queueEdit(raw, wireTrack));
           } else if (raw.action === 'pause' || raw.action === 'resume') {
             const state = await audio.state();
             if (!state.id) throw new Error();
@@ -128,6 +130,7 @@ export function usePocketRemote(
               ok: true,
               playing: state.playing,
               title: state.title || '',
+              ...(snapshot && {snapshot}),
             },
             remoteKey,
             getRandomValues,
@@ -149,7 +152,6 @@ export function usePocketRemote(
       } catch {
         /* Unauthenticated requests receive no playback information. */
       } finally {
-        if (claimed) handling = false;
         await receiver.finish(challenge, answer).catch(() => {});
       }
     }

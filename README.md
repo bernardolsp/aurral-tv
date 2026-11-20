@@ -6,13 +6,17 @@ A remote-controlled Android TV player for Aurral. Browse saved playlists and Flo
 
 Open **Pair with Pocket** on the TV. Scan the QR code with your phone, compare the short code shown on both screens, and confirm in a Pocket build that supports TV setup. Both devices must be on the same local network. Pocket passes your server address, custom proxy headers, and a one-time pairing code. The TV exchanges the code for its own session and stores its connection in Android secure storage.
 
-For manual setup, choose **Enter server and pairing code**. Enter your Aurral server URL and a code generated in **Settings → Profile → Pair a device**. Servers behind a proxy requiring custom headers need Pocket setup. The TV streams completed playlist tracks in order. Choose **Disconnect** to remove the saved TV connection.
+For manual setup, choose **Enter server and pairing code**. Enter your Aurral server URL and a code generated in **Settings → Profile → Pair a device**. Servers behind a proxy requiring custom headers need Pocket setup. Choose **Settings → Disconnect** on the TV to remove its saved connection.
 
 ## Play from Pocket
 
-Keep Aurral TV open and connect both devices to the same local network. If the TV was paired before Pocket remote support was available, choose **Pair Pocket remote** on the TV and confirm the new QR code in Pocket using the same Aurral account. In Pocket, open Now Playing, a playlist or a Flow and choose **Play on TV**. Transferring the current song includes its position and up to 100 playable queue items. The phone can pause, resume and skip. Pair again if the TV's LAN address changes.
+Keep Aurral TV open and connect both devices to the same local network. If the TV was paired before Pocket remote support was available, choose **Settings → Pair Pocket remote** on the TV and confirm the new QR code in Pocket using the same Aurral account. In Pocket, open Now Playing, a playlist or a Flow and choose **Play on TV**. Transferring the current song includes its position and up to 100 playable queue items. Pair again if the TV's LAN address changes.
 
-Now Playing shows album art and the next songs in play order. Press Down from Play/Pause to select an upcoming track. The TV requests MP3 at 320 kbps from servers that support transcoding. Known MP3 sources at or below 320 kbps keep their existing encoding.
+The TV maintains the shared queue while Pocket is away. Reopen Pocket to see what is playing and edit the order, including sessions started with the TV remote. Choose **Continue on iPhone** in Pocket to bring the current track, position, and remaining queue back to your phone.
+
+On the TV, **Up next** shows upcoming tracks in play order. Select a song to jump to it. Open **Manage queue** to browse the full list, move or remove upcoming songs, and pin a song with **Play next**. Shuffle changes the order of upcoming songs and keeps pinned requests at the front. To continue with a saved Flow when the last song ends, open **Manage queue → Choose Flow**. Choose **Stop after this queue** to turn continuation off.
+
+The TV requests MP3 at 320 kbps from servers that support transcoding. Known MP3 sources at or below 320 kbps keep their existing encoding.
 
 ## Build and install
 

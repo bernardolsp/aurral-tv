@@ -1,0 +1,11 @@
+plugins {
+    id 'com.android.library'
+    id 'expo-module-gradle-plugin'
+}
+
+group = 'com.aurral.tv.setup'
+version = '0.1.0'
+
+android {
+    namespace 'com.aurral.tv.setup'
+}

@@ -1,0 +1,14 @@
+/node_modules/
+/.expo/
+/dist/
+/.gradle/
+/build/
+/android/
+/ios/
+*.tsbuildinfo
+.env*.local
+modules/*/android/build/
+modules/*/android/.gradle/
+modules/*/android/.cxx/
+__pycache__/
+.DS_Store

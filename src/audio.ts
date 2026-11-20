@@ -9,7 +9,7 @@ type QueueMetadata = {
 };
 export type Playback = QueueMetadata & {
   id: string | null; title: string | null; artist: string | null; collectionId: string | null;
-  albumName: string | null; artworkPath: string | null;
+  albumName: string | null; artworkPath: string | null; streamPath: string | null;
   playing: boolean; buffering: boolean; previous: boolean; next: boolean; message: string | null;
   upNext: { entryId: string; id: string; title: string; artist: string; albumName: string | null; artworkPath: string | null }[];
   positionMs: number; durationMs: number | null; canSeek: boolean;

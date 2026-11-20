@@ -11,7 +11,7 @@ type Job = {
 
 export function albumArtworkPath(input: unknown): string | null {
   if (typeof input !== 'string' || input.length > 2048) return null;
-  if (/^\/api\/library\/artwork\/album\/[a-zA-Z0-9_-]+(?:\?v=[a-zA-Z0-9_.-]+)?$/.test(input)) return input;
+  if (/^\/api\/library\/artwork\/(?:album|track)\/[a-zA-Z0-9_-]+(?:\?v=[a-zA-Z0-9_.-]+)?$/.test(input)) return input;
   if (/^\/api\/library\/albums\/[a-zA-Z0-9_-]+\/cover(?:\?v=[a-zA-Z0-9_.-]+)?$/.test(input)) return input;
   if (/^\/api\/artists\/release-group\/[a-f0-9-]{36}\/cover\/image$/i.test(input)) return input;
   if (!/^\/api\/playlists\/track-artwork\/[a-zA-Z0-9_-]+(?:\?[^#\\]*)?$/.test(input)) return null;

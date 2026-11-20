@@ -78,7 +78,7 @@ class AurralAudioModule : Module() {
             "previous" to (playback?.canSkip(-1) ?: false), "next" to (playback?.canSkip(1) ?: false),
             "message" to playback?.message(), "buffering" to (playback?.buffering() == true),
             "durationMs" to playback?.durationMs()?.takeIf { it > 0 }, "positionMs" to (playback?.positionMs() ?: 0L),
-            "canSeek" to (playback?.canSeek() == true), "albumName" to track?.album, "artworkPath" to track?.artwork,
+            "streamPath" to track?.path, "canSeek" to (playback?.canSeek() == true), "albumName" to track?.album, "artworkPath" to track?.artwork,
             "upNext" to playback?.upcoming().orEmpty().map {
                 mapOf("entryId" to it.entryId, "id" to it.id, "title" to it.title, "artist" to it.artist,
                     "albumName" to it.album, "artworkPath" to it.artwork)

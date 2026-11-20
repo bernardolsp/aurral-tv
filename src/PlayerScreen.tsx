@@ -69,7 +69,7 @@ function Progress({ playback, transport }: { playback: Playback; transport: (tas
   );
 }
 
-export default function PlayerScreen({ session, playback, fromPocket, collection, error, transport, onOpenQueue, onBack }: {
+export default function PlayerScreen({ session, playback, fromPocket, collection, error, transport, onOpenQueue, onOpenLyrics, onBack }: {
   session: Connection;
   playback: Playback;
   fromPocket?: boolean;
@@ -77,6 +77,7 @@ export default function PlayerScreen({ session, playback, fromPocket, collection
   error: string;
   transport: (task: Promise<void>) => void;
   onOpenQueue: () => void;
+  onOpenLyrics: () => void;
   onBack: () => void;
 }) {
   const { width, height } = useWindowDimensions();
@@ -103,6 +104,7 @@ export default function PlayerScreen({ session, playback, fromPocket, collection
         <View style={s.stageHeader}>
           <Button label="Back" icon="back" iconOnly onPress={onBack} />
           <Text numberOfLines={1} style={s.source}>{source}</Text>
+          <Button label="Lyrics" icon="lyrics" onPress={onOpenLyrics} />
         </View>
         <View style={s.artworkRegion}>
           <Artwork session={session} id={collectionId} size={Math.round(Math.min(height * 0.28, 190))}

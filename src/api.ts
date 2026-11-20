@@ -10,7 +10,7 @@ export type Collection = {
 };
 export class ExpiredSession extends Error {}
 
-async function request(uri: string, headers: Record<string,string>, body?: object, signal?: AbortSignal) {
+export async function request(uri: string, headers: Record<string,string>, body?: object, signal?: AbortSignal) {
   const response = await fetch(uri, {
     method: body ? 'POST' : 'GET', headers: { ...headers, 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
@@ -69,6 +69,11 @@ export async function tracks(session: Connection, collection: Collection, signal
 
 export function cover(session: Connection, collectionId: string, signal: AbortSignal) {
   return fetchCover(session, '/api/playlists/artwork/' + encodeURIComponent(collectionId), signal);
+}
+
+export function libraryEntityCover(session: Connection, path: string, signal: AbortSignal) {
+  if (!/^\/api\/library\/(?:artwork\/(?:artist|album)\/[a-zA-Z0-9_-]+|(?:artists|albums)\/[a-zA-Z0-9_-]+\/cover)(?:\?v=[a-zA-Z0-9_.-]+)?$/.test(path)) return Promise.resolve(null);
+  return fetchCover(session, path, signal);
 }
 
 export async function trackCover(session: Connection, artworkPath: string, signal: AbortSignal) {

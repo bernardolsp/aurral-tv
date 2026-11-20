@@ -1,12 +1,18 @@
 # Aurral TV
 
-A remote-controlled Android TV player for Aurral. Browse saved playlists and Flows, select a downloaded song, and use the remote to pause or skip. Android's media session keeps playing when you return to the TV home screen.
+A remote-controlled Android TV player for Aurral. Browse your music library, saved playlists, and Flows. Android's media session keeps playing when you return to the TV home screen.
 
 ## Pair a TV
 
 Open **Pair with Pocket** on the TV. Scan the QR code with your phone, compare the short code shown on both screens, and confirm in a Pocket build that supports TV setup. Both devices must be on the same local network. Pocket passes your server address, custom proxy headers, and a one-time pairing code. The TV exchanges the code for its own session and stores its connection in Android secure storage.
 
 For manual setup, choose **Enter server and pairing code**. Enter your Aurral server URL and a code generated in **Settings → Profile → Pair a device**. Servers behind a proxy requiring custom headers need Pocket setup. Choose **Settings → Disconnect** on the TV to remove its saved connection.
+
+## Browse music and lyrics
+
+Choose **Library** on the TV home screen to browse artists, albums, songs, genres, and favorites, or search across your available music. Open an artist to browse their discography. Play an album in disc and track order, or add songs to the active shared queue with **Play next** or **Add to queue**.
+
+Choose **Lyrics** on Now Playing. Aurral supplies the same lyrics as its web player, including local lyrics for indexed tracks when available. Timed lyrics follow playback. Select **Browse lines** to seek to a line or **Follow song** to resume automatic tracking. Use **Earlier** and **Later** to read untimed lyrics.
 
 ## Play from Pocket
 

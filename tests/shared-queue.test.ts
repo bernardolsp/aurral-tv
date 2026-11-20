@@ -7,7 +7,7 @@ const entry = (n: number): QueueEntry => ({entryId: String(n), id: String(n), ar
   title:'a'.repeat(4000), artworkPath:null, durationMs:60000, streamPath:'/api/playlists/stream/'+n, transcode:true, pinned:false});
 const tracks = Array.from({length:60},(_,i)=>entry(i));
 const mock = async (offset:number,limit:number):Promise<QueueSnapshot>=>({
-  sessionId:'session', revision:7,index:3,total:tracks.length,positionMs:23000,durationMs:60000,
+  streamPath:null, sessionId:'session', revision:7,index:3,total:tracks.length,positionMs:23000,durationMs:60000,
   playing:true,buffering:false,canSeek:true,shuffle:true,flowId:null,flowName:null,collectionId:'p',id:'3',
   title:'Playing',artist:'Artist',currentEntryId:'3',upNext:[],message:null,previous:true,next:true,
   albumName:null,artworkPath:null,offset,entries:tracks.slice(offset,offset+limit),

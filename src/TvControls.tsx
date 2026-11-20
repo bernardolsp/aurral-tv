@@ -22,6 +22,8 @@ export const color = {
 const paths = {
   back: 'M15 5l-7 7 7 7',
   refresh: 'M20 7v5h-5 M19.3 12a7.3 7.3 0 1 1-2-5.3L20 9',
+  library: 'M3 4v16 M7 4v16 M11 4v16 M15 5l5 14',
+  lyrics: 'M4 5h16v12H9l-5 4z M8 9h8 M8 13h5',
   disconnect: 'M9 4H5v16h4 M10 12h10 M16 8l4 4-4 4',
   play: 'M8 4.5L20 12 8 19.5z',
   pause: 'M7 5v14 M16 5v14',
@@ -182,6 +184,8 @@ export function Artwork({
   backdrop,
   hideMissing,
   fitHeight,
+  entityArtworkPath,
+  artworkFallbackLabel,
 }: {
   session: Connection;
   id: string;
@@ -191,8 +195,12 @@ export function Artwork({
   backdrop?: boolean;
   hideMissing?: boolean;
   fitHeight?: boolean;
+  entityArtworkPath?: string | null;
+  artworkFallbackLabel?: string;
 }) {
-  const identity = JSON.stringify(artworkCandidates(id, track));
+  const candidates = entityArtworkPath === undefined ? artworkCandidates(id, track) :
+    (entityArtworkPath ? ['entity:' + entityArtworkPath] : []);
+  const identity = JSON.stringify(candidates);
   const [loaded, setLoaded] = useState<{session: Connection; identity: string; uri: string; next: () => void} | null>(null);
   useEffect(() => {
     let cache = caches.get(session);
@@ -202,6 +210,7 @@ export function Artwork({
           const [artist, album] = JSON.parse(resource.slice(6)) as [string, string];
           return api.libraryAlbumCover(connection, artist, album, signal);
         }
+        if (resource.startsWith('entity:')) return api.libraryEntityCover(connection, resource.slice(7), signal);
         if (resource.startsWith('track:')) return api.trackCover(connection, resource.slice(6), signal);
         return api.cover(connection, resource.slice(11), signal);
       });
@@ -229,13 +238,13 @@ export function Artwork({
   const image = loaded?.session === session && loaded.identity === identity ? loaded : null;
   const sleeve = track ? (track.albumName ? track.artist + ':' + track.albumName : track.id || 'song') : id;
   if (hideMissing && !image) return null;
-  const initials = (track?.artist || track?.albumName || '♪').trim().split(/\s+/u).slice(0, 2)
+  const initials = (artworkFallbackLabel || track?.artist || track?.albumName || '♪').trim().split(/\s+/u).slice(0, 2)
     .map(word => Array.from(word)[0]).join('').toUpperCase();
   return (
     <View style={backdrop ? [StyleSheet.absoluteFill, { backgroundColor: palette(sleeve)[2] }] :
       [s.cover, fitHeight ? { height: '100%', maxHeight: size, maxWidth: size, aspectRatio: 1 } :
         { width: size, height: size }]} accessible={false}>
-      {!backdrop && (track ?
+      {!backdrop && (track || entityArtworkPath !== undefined ?
         <View style={[s.monogram, { backgroundColor: palette(sleeve)[2] }]}>
           <Text style={{color: palette(sleeve)[0], fontSize: size * 0.34, fontWeight: '700'}}>{initials}</Text>
         </View> : <Sleeve id={sleeve} flow={flow} />)}

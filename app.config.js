@@ -1,11 +1,11 @@
 module.exports = {
   name: 'Aurral TV',
   slug: 'aurral-tv',
-  version: '0.3.0',
+  version: '0.4.0',
   platforms: ['android'],
   orientation: 'landscape',
   icon: './assets/icon.png',
-  android: { package: 'com.aurral.tv', versionCode: 4, allowBackup: false },
+  android: { package: 'com.aurral.tv', versionCode: 5, allowBackup: false },
   plugins: [
     ['@react-native-tvos/config-tv', { isTV: true, androidTVBanner: './assets/banner.png', androidTVIcon: './assets/icon.png' }],
     ['expo-build-properties', { android: { usesCleartextTraffic: true, minSdkVersion: 28 } }],

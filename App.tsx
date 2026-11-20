@@ -1,17 +1,19 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as api from './src/api';
-import { audio, play, type Playback } from './src/audio';
+import { audio, editQueue, play, type Playback } from './src/audio';
 import { serverAddress, type Connection, type Setup } from './src/connection';
 import { clearSession, getSession, saveSession } from './src/session';
 import { CollectionDetails, Library } from './src/LibraryScreen';
+import { MusicLibraryScreen } from './src/MusicLibraryScreen';
+import LyricsScreen from './src/LyricsScreen';
 import PlayerScreen from './src/PlayerScreen';
 import { FlowPicker, QueueScreen } from './src/QueueScreen';
 import SetupScreen from './src/SetupScreen';
 import { Artwork, Brand, Button, Icon, color } from './src/TvControls';
 import { usePocketRemote } from './src/usePocketRemote';
 
-type Page = 'home' | 'tracks' | 'player' | 'queue' | 'flows' | 'remote' | 'settings';
+type Page = 'music' | 'lyrics' | 'home' | 'tracks' | 'player' | 'queue' | 'flows' | 'remote' | 'settings';
 function message(e: unknown) {
   return e instanceof Error ? e.message : 'Could not reach Aurral.';
 }
@@ -36,7 +38,7 @@ export default function App() {
   const [session, setSession] = useState<Connection | null>(null);
   const [ready, setReady] = useState(false);
   const [page, setPage] = useState<Page>('home');
-  const [parent, setParent] = useState<'home' | 'tracks'>('home');
+  const [parent, setParent] = useState<'home' | 'tracks' | 'music'>('home');
   const [selected, setSelected] = useState<api.Collection | null>(null);
   const [cursor, setCursor] = useState('');
   const [catalog, setCatalog] = useState<api.Collection[]>([]);
@@ -47,6 +49,8 @@ export default function App() {
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
   const activePair = useRef(false);
+  const musicBack = useRef<(() => boolean) | null>(null);
+  const [musicSource, setMusicSource] = useState('Library');
 
   const cast = useCallback((_collectionId: string | null) => {
     setFromPocket(true);
@@ -136,7 +140,8 @@ export default function App() {
 
   const back = useCallback(() => {
     setError('');
-    if (page === 'flows' || page === 'queue') {
+    if (page === 'music' && musicBack.current?.()) return true;
+    if (page === 'lyrics' || page === 'flows' || page === 'queue') {
       setPage(page === 'flows' ? 'queue' : 'player');
       return true;
     }
@@ -193,6 +198,10 @@ export default function App() {
     }
   }
 
+  const expire = useCallback(() => {
+    void forget(true).catch(e => setError(message(e)));
+  }, [forget]);
+
   function open(collection: api.Collection) {
     setSelected(collection);
     setCursor('');
@@ -213,34 +222,57 @@ export default function App() {
     );
   if (!session || page === 'remote')
     return <SetupScreen onPair={pair} remote={!!session} onBack={session ? back : undefined} />;
-  const currentCollection = catalog.find((c) => c.id === playback?.collectionId);
-  if (page === 'player' && playback?.id)
-    return <PlayerScreen session={session} playback={playback} fromPocket={fromPocket}
-      collection={currentCollection} error={error} transport={transport} onBack={back}
-      onOpenQueue={() => setPage('queue')} />;
+  const currentCollection = catalog.find(c => c.id === playback?.collectionId) ??
+    (playback?.collectionId === 'music-library' ? {id:'music-library',name:musicSource,kind:'Playlist' as const} : undefined);
+  const playerVisible = page === 'player' && !!playback?.id;
+  const keepMusic = page === 'music' || (parent === 'music' && ['player','queue','flows','lyrics'].includes(page));
   const libraryPage = page === 'home' || page === 'tracks';
   return (
-    <View style={s.screen}>
+    <View style={playerVisible ? s.full : s.screen}>
+      {playerVisible && playback ? <PlayerScreen session={session} playback={playback} fromPocket={fromPocket}
+        collection={currentCollection} error={error} transport={transport} onBack={back}
+        onOpenLyrics={() => setPage('lyrics')} onOpenQueue={() => setPage('queue')} /> :
       <View style={s.header}>
         <Brand />
         <View style={s.actions}>
+          {page === 'home' && <Button label="Library" icon="library" onPress={() => setPage('music')} />}
           {page !== 'home' && <Button label="Back" icon="back" onPress={back} />}
-          {libraryPage && playback?.id && (
+          {(libraryPage || page === 'music') && playback?.id && (
             <ReturnToPlayer
               session={session} playback={playback}
               onPress={() => {
-                setParent(page === 'tracks' ? 'tracks' : 'home');
+                setParent(page === 'music' ? 'music' : page === 'tracks' ? 'tracks' : 'home');
                 setPage('player');
               }}
             />
           )}
-          {libraryPage && (
+          {(libraryPage || page === 'music') && (
             <Button label="Refresh" icon="refresh" iconOnly onPress={() => setRevision((n) => n + 1)} />
           )}
           {page === 'home' && <Button label="Settings" icon="settings" iconOnly onPress={() => setPage('settings')} />}
         </View>
-      </View>
-      {page === 'settings' ? (
+      </View>}
+      {keepMusic && <View style={page === 'music' ? s.full : s.hidden}
+        accessibilityElementsHidden={page !== 'music'} importantForAccessibility={page === 'music' ? 'auto' : 'no-hide-descendants'}>
+        <MusicLibraryScreen session={session} active={page === 'music'} revision={revision} backRef={musicBack}
+          canQueue={!!playback?.sessionId} onExpired={expire}
+          onPlay={async (items, index, source) => {
+            await play(session, 'music-library', items, index);
+            setPlayback(await audio.state());
+            setFromPocket(false);
+            setMusicSource(source || 'Library');
+            setParent('music');
+            setError('');
+            setPage('player');
+          }}
+          onEnqueue={async (items, placement) => {
+            if (!playback?.sessionId) throw new Error('Start playback to add to the queue.');
+            await editQueue(session,{sessionId:playback.sessionId,action:'enqueue',tracks:items,placement});
+          }} />
+      </View>}
+      {page === 'music' || playerVisible ? null : page === 'lyrics' && playback?.id ?
+        <LyricsScreen key={playback.currentEntryId ?? playback.id} session={session} playback={playback} onExpired={expire} /> :
+        page === 'settings' ? (
         <View style={s.settings}>
           <Text accessibilityRole="header" style={s.heading}>Settings</Text>
           <Button preferred label="Pair Pocket remote" icon="phone" onPress={() => setPage('remote')} />
@@ -291,6 +323,8 @@ export default function App() {
 }
 
 const s = StyleSheet.create({
+  hidden: { display: 'none' },
+  full: { flex: 1, backgroundColor: color.bg },
   screen: { flex: 1, backgroundColor: color.bg, paddingHorizontal: '4.5%', paddingTop: 18, paddingBottom: 18 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: color.bg, gap: 12 },
   header: {

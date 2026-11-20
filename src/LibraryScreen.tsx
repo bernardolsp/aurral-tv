@@ -107,7 +107,7 @@ export function Library({
   if (!first)
     return (
       <View style={s.empty}>
-        <Text style={s.heading}>Your library is empty</Text>
+        <Text style={s.heading}>No playlists or Flows yet</Text>
         <Text style={s.secondary}>Save a playlist or create a Flow in Aurral to see it here.</Text>
       </View>
     );

@@ -10,9 +10,9 @@ export type Collection = {
 };
 export class ExpiredSession extends Error {}
 
-export async function request(uri: string, headers: Record<string,string>, body?: object, signal?: AbortSignal) {
+export async function request(uri: string, headers: Record<string,string>, body?: object, signal?: AbortSignal, method: 'GET' | 'POST' | 'PUT' = body ? 'POST' : 'GET') {
   const response = await fetch(uri, {
-    method: body ? 'POST' : 'GET', headers: { ...headers, 'Content-Type': 'application/json' },
+    method, headers: { ...headers, 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
     redirect: 'error', credentials: 'omit', signal: signal ?? AbortSignal.timeout(20000),
   });

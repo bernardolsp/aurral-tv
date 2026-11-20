@@ -17,6 +17,8 @@ import {
   libraryPage,
   searchMusicLibrary,
   playbackDestination,
+  readArtistMonitoring,
+  setArtistMonitoring,
   type PlaybackLink,
   type PlaybackDestination,
   type LibraryAlbum,
@@ -386,6 +388,47 @@ function Hero({
   );
 }
 
+function ArtistMonitor({ session, artist, mbid, revision, onExpired }: Pick<Shared, 'session' | 'revision' | 'onExpired'> & {
+  artist: string; mbid: string;
+}) {
+  const read = useCallback((signal: AbortSignal) => readArtistMonitoring(session, mbid, signal), [session, mbid]);
+  const { result, error, retry } = useRead(read, revision, onExpired);
+  const pending = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const [failure, setFailure] = useState('');
+  async function change() {
+    if (!result?.canChange || pending.current) return;
+    pending.current = true;
+    setSaving(true);
+    setFailure('');
+    try {
+      await setArtistMonitoring(session, mbid, artist, !result.monitored);
+    } catch (cause) {
+      if (cause instanceof ExpiredSession) onExpired();
+      else setFailure(errorText(cause));
+    } finally {
+      pending.current = false;
+      setSaving(false);
+      retry();
+    }
+  }
+  if (!result) return error ? (
+    <><Text style={s.error}>{error}</Text><Button label="Retry monitoring status" icon="refresh" onPress={retry} /></>
+  ) : <Text style={s.muted}>Checking monitoring…</Text>;
+  return (
+    <>
+      {result.monitored && <Text accessibilityLiveRegion="polite" style={s.feedback}>
+        {result.customRules ? 'Monitored · Custom rules' : 'Monitored'}
+      </Text>}
+      {result.canChange ? (
+        <Button label={saving ? 'Saving…' : result.monitored ? 'Stop monitoring' : 'Monitor artist'}
+          disabled={saving} onPress={() => void change()} />
+      ) : !result.monitored && <Text style={s.muted}>Not monitored</Text>}
+      {!!failure && <Text accessibilityLiveRegion="polite" style={s.error}>{failure}</Text>}
+    </>
+  );
+}
+
 function Actions({
   tracks,
   index,
@@ -602,7 +645,12 @@ export function MusicLibraryScreen(props: Props & {initialRoute?: PlaybackDestin
           <View key={i} style={[s.screen, !visible && s.hidden]}>
             {route.type === 'artist' ? (
               <View style={s.layout}>
-                <Hero session={props.session} item={{ kind: 'artist', data: route.artist }} />
+                <Hero session={props.session} item={{ kind: 'artist', data: route.artist }}>
+                  {active && (route.artist.mbid ? (
+                    <ArtistMonitor session={props.session} artist={route.artist.name} mbid={route.artist.mbid}
+                      revision={props.revision} onExpired={props.onExpired} />
+                  ) : <Text style={s.muted}>Monitoring requires a MusicBrainz artist ID.</Text>)}
+                </Hero>
                 <Browse {...props} active={active} kind="albums" artistId={route.artist.id} onOpen={onOpen} />
               </View>
             ) : route.type === 'album' ? (

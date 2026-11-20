@@ -14,6 +14,8 @@ Choose **Library** on the TV home screen to browse artists, albums, songs, genre
 
 Select the artist or album name on Now Playing or Lyrics to browse your library while the song continues. Back returns to the listening screen.
 
+Choose **Monitor artist** beneath the artist’s name to start monitoring with your server’s default rules. The artist view also shows existing monitoring and lets you stop it.
+
 Choose **Lyrics** on Now Playing. Aurral supplies the same lyrics as its web player, including local lyrics for indexed tracks when available. Timed lyrics follow playback. Select **Browse lines** to seek to a line or **Follow song** to resume automatic tracking. Use **Earlier** and **Later** to read untimed lyrics.
 
 ## Play from Pocket

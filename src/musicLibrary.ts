@@ -5,6 +5,7 @@ import { albumNameKey, type Track } from './playlistStreams';
 export type LibraryKind = 'artists' | 'albums' | 'tracks';
 export type LibraryArtist = {
   id: string;
+  mbid: string | null;
   name: string;
   artworkPath: string;
   albumCount: number;
@@ -40,7 +41,7 @@ type Options = {
 };
 
 type Id = string | number;
-type ArtistRow = { id: Id; name?: string; albumCount?: number; coverUrl?: string };
+type ArtistRow = { id: Id; mbid?: string | null; name?: string; albumCount?: number; coverUrl?: string };
 type AlbumRow = {
   id: Id;
   title?: string;
@@ -81,6 +82,38 @@ function canonicalId(value: unknown): string | null {
   return /^[1-9]\d*$/.test(id) ? id : null;
 }
 
+const musicBrainzId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function artistMonitoringPath(mbid: string) {
+  if (!musicBrainzId.test(mbid)) throw new Error('Monitoring requires a MusicBrainz artist ID.');
+  return '/api/library/artists/' + mbid;
+}
+
+export async function readArtistMonitoring(session: Connection, mbid: string, signal: AbortSignal) {
+  const artist = serverResource(session, artistMonitoringPath(mbid) + '/monitoring');
+  const account = serverResource(session, '/api/auth/me');
+  const [state, userInfo] = await Promise.all([artist, account].map(async ({ uri, headers }) =>
+    (await request(uri, headers, undefined, signal)).json()
+  ));
+  if (typeof state?.monitored !== 'boolean' || typeof state.added !== 'boolean') {
+    throw new Error('The server returned an invalid monitoring status.');
+  }
+  const user = userInfo?.user;
+  return {
+    monitored: state.added === true && state.monitored === true,
+    customRules: state.useDefault === false,
+    canChange: user?.role === 'admin' || (user?.permissions?.changeMonitoring === true &&
+      (state.added === true || user.permissions.addArtist === true)),
+  };
+}
+
+export async function setArtistMonitoring(session: Connection, mbid: string, artistName: string, monitored: boolean) {
+  const { uri, headers } = serverResource(session, artistMonitoringPath(mbid));
+  const monitoring = monitored ? { monitored, useDefault: true } : { monitored };
+  const result = await (await request(uri, headers, { artistName, monitoring }, undefined, 'PUT')).json();
+  if (result?.monitored !== monitored) throw new Error('The server did not confirm the monitoring change.');
+}
+
 // Both routes are owned by the configured server. Retain only versioned URLs
 // for this particular entity, including custom artwork set in Aurral.
 function artwork(kind: 'artist' | 'album', id: string, supplied?: string) {
@@ -111,6 +144,7 @@ function mapPage(raw: WirePage, albumId: string | undefined, transcode: boolean)
       ? [
           {
             id,
+            mbid: row.mbid && musicBrainzId.test(row.mbid) ? row.mbid : null,
             name: row.name || 'Unknown artist',
             albumCount: row.albumCount ?? 0,
             artworkPath: artwork('artist', id, row.coverUrl),

@@ -17,7 +17,7 @@ const hooks = registerHooks({
     return next(specifier, context);
   },
 });
-const { albumTracks, libraryPage, playbackDestination, searchMusicLibrary } = await import('../src/musicLibrary.ts');
+const { albumTracks, libraryPage, playbackDestination, readArtistMonitoring, searchMusicLibrary, setArtistMonitoring } = await import('../src/musicLibrary.ts');
 hooks.deregister();
 
 function session() {
@@ -27,7 +27,8 @@ function session() {
     customHeaders: { 'X-Fixture': 'proxy' },
   };
 }
-const artist = { id: 10, name: 'Example Band', albumCount: 2, coverUrl: '/api/library/artists/10/cover?v=5' };
+const mbid = '12345678-1234-1234-1234-123456789abc';
+const artist = { id: 10, mbid, name: 'Example Band', albumCount: 2, coverUrl: '/api/library/artists/10/cover?v=5' };
 const album = {
   id: 12,
   title: 'Two discs',
@@ -45,6 +46,46 @@ const file = {
 function base() {
   return { page: 1, hasMore: false, total: 1, artists: [artist], albums: [album], tracks: [] as unknown[] };
 }
+
+test('artist monitoring uses the paired account and only writes on explicit changes', async (t) => {
+  const path = '/prefix/api/library/artists/' + mbid;
+  let monitored = false;
+  let canChange = false;
+  const writes: unknown[] = [];
+  t.mock.method(globalThis, 'fetch', async (uri: string, init: RequestInit) => {
+    const url = new URL(uri);
+    assert.equal(url.origin, 'https://tv.example');
+    assert.equal(new Headers(init.headers).get('Authorization'), 'Bearer example-session');
+    assert.equal(new Headers(init.headers).get('X-Fixture'), 'proxy');
+    if (init.method === 'PUT') {
+      assert.equal(url.pathname, path);
+      const body = JSON.parse(String(init.body));
+      writes.push(body);
+      monitored = body.monitoring.monitored;
+      return Response.json({ monitored });
+    }
+    assert.equal(init.method, 'GET');
+    if (url.pathname === '/prefix/api/auth/me') {
+      return Response.json({ user: { permissions: { changeMonitoring: canChange } } });
+    }
+    assert.equal(url.pathname, path + '/monitoring');
+    return Response.json({ added: true, monitored, useDefault: true });
+  });
+  const read = () => readArtistMonitoring(session(), mbid, new AbortController().signal);
+  assert.deepEqual(await read(), { monitored: false, customRules: false, canChange: false });
+  canChange = true;
+  assert.equal((await read()).canChange, true);
+  assert.equal(writes.length, 0);
+  await setArtistMonitoring(session(), mbid, artist.name, true);
+  assert.equal((await read()).monitored, true);
+  await setArtistMonitoring(session(), mbid, artist.name, false);
+  assert.equal((await read()).monitored, false);
+  assert.deepEqual(writes, [
+    { artistName: artist.name, monitoring: { monitored: true, useDefault: true } },
+    { artistName: artist.name, monitoring: { monitored: false } },
+  ]);
+  await assert.rejects(setArtistMonitoring(session(), '10', artist.name, true), /MusicBrainz/);
+});
 
 test('playback links use the streamed release and respect guest artist credits', async (t) => {
   const guest = { ...artist, id: 35, name: 'Guest' };
@@ -112,6 +153,7 @@ test('canonical album and artist references share the authenticated server prefi
   assert.equal(page.albums[0].artworkPath, '/api/library/artwork/album/12?v=changed');
   assert.equal(page.albums[0].year, '2011');
   assert.equal(page.artists[0].artworkPath, artist.coverUrl);
+  assert.equal(page.artists[0].mbid, mbid);
   assert.equal(page.artists[1].artworkPath, '/api/library/artists/11/cover');
 });
 

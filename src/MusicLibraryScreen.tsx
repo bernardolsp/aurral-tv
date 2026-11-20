@@ -16,6 +16,9 @@ import {
   albumTracks,
   libraryPage,
   searchMusicLibrary,
+  playbackDestination,
+  type PlaybackLink,
+  type PlaybackDestination,
   type LibraryAlbum,
   type LibraryArtist,
   type LibraryKind,
@@ -504,9 +507,16 @@ function AlbumScreen({
   );
 }
 
-export function MusicLibraryScreen(props: Props) {
+export function LinkedMusicScreen({ link, ...props }: Props & {link: PlaybackLink}) {
+  const read = useCallback((signal: AbortSignal) => playbackDestination(props.session, link, signal), [props.session, link]);
+  const {result, error, retry} = useRead(read, props.revision, props.onExpired);
+  if (!result) return <Notice error={error} retry={retry} />;
+  return <MusicLibraryScreen {...props} initialRoute={result} />;
+}
+
+export function MusicLibraryScreen(props: Props & {initialRoute?: PlaybackDestination}) {
   const [section, setSection] = useState<Section>('artists');
-  const [routes, setRoutes] = useState<Route[]>([]);
+  const [routes, setRoutes] = useState<Route[]>(() => props.initialRoute ? [props.initialRoute] : []);
   const nestedBack = useRef<(() => boolean) | null>(null);
   const enteredFromContent = useRef(false);
   const push = (route: Route) => {
@@ -516,7 +526,7 @@ export function MusicLibraryScreen(props: Props) {
   useEffect(() => {
     if (!props.active) return;
     const back = () => {
-      if (routes.length) {
+      if (routes.length > (props.initialRoute ? 1 : 0)) {
         setRoutes((old) => old.slice(0, -1));
         return true;
       }
@@ -527,7 +537,7 @@ export function MusicLibraryScreen(props: Props) {
     return () => {
       if (props.backRef.current === back) props.backRef.current = null;
     };
-  }, [props.active, props.backRef, routes.length, section]);
+  }, [props.active, props.backRef, props.initialRoute, routes.length, section]);
   const onSong: OpenSong = (tracks, index, source) => push({ type: 'song', tracks, index, source });
   const onOpen = (item: LibraryItem) => {
     if (item.kind === 'artist') push({ type: 'artist', artist: item.data });
@@ -537,7 +547,7 @@ export function MusicLibraryScreen(props: Props) {
   const rootActive = props.active && !routes.length;
   return (
     <View style={s.screen}>
-      <View style={[s.layout, routes.length > 0 && s.hidden]}>
+      {!props.initialRoute && <View style={[s.layout, routes.length > 0 && s.hidden]}>
         <View style={s.nav}>
           <Text accessibilityRole="header" style={s.navHeading}>
             Your library
@@ -584,7 +594,7 @@ export function MusicLibraryScreen(props: Props) {
             returning={false}
           />
         )}
-      </View>
+      </View>}
       {routes.map((route, i) => {
         const visible = i === routes.length - 1;
         const active = visible && props.active;

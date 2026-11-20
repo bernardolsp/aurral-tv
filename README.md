@@ -12,6 +12,8 @@ For manual setup, choose **Enter server and pairing code**. Enter your Aurral se
 
 Choose **Library** on the TV home screen to browse artists, albums, songs, genres, and favorites, or search across your available music. Open an artist to browse their discography. Play an album in disc and track order, or add songs to the active shared queue with **Play next** or **Add to queue**.
 
+Select the artist or album name on Now Playing or Lyrics to browse your library while the song continues. Back returns to the listening screen.
+
 Choose **Lyrics** on Now Playing. Aurral supplies the same lyrics as its web player, including local lyrics for indexed tracks when available. Timed lyrics follow playback. Select **Browse lines** to seek to a line or **Follow song** to resume automatic tracking. Use **Earlier** and **Later** to read untimed lyrics.
 
 ## Play from Pocket

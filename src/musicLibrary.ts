@@ -1,6 +1,6 @@
 import { request } from './api';
 import { serverResource, type Connection } from './connection';
-import type { Track } from './playlistStreams';
+import { albumNameKey, type Track } from './playlistStreams';
 
 export type LibraryKind = 'artists' | 'albums' | 'tracks';
 export type LibraryArtist = {
@@ -274,4 +274,44 @@ export async function searchMusicLibrary(session: Connection, query: string, sig
     lookup('tracks'),
   ]);
   return { artists: artists.artists, albums: albums.albums, tracks: tracks.tracks };
+}
+
+export type PlaybackLink = {
+  kind: 'artist' | 'album';
+  artist: string | null;
+  albumName: string | null;
+  streamPath: string | null;
+};
+export type PlaybackDestination =
+  | { type: 'artist'; artist: LibraryArtist }
+  | { type: 'album'; album: LibraryAlbum }
+  | { type: 'results'; kind: 'albums' | 'artists'; query: string };
+
+export async function playbackDestination(
+  session: Connection, link: PlaybackLink, signal?: AbortSignal,
+): Promise<PlaybackDestination> {
+  const albumId = /^\/(?:api\/)?library\/stream\/([1-9]\d*)\/[1-9]\d*$/.exec(link.streamPath ?? '')?.[1];
+  const query = (link.kind === 'artist' ? link.artist : link.albumName)?.trim();
+  if (!query) throw new Error('This song is missing its ' + link.kind + ' name.');
+  if (albumId) {
+    // A track page also identifies its album and album artist, even for two releases with the same name.
+    const page = await libraryPage(session, { kind:'tracks', albumId, pageSize:1, signal });
+    const album = page.albums.find(row => row.id === albumId);
+    if (album && link.kind === 'album') return {type:'album', album};
+    const artist = page.artists.find(row => row.id === album?.artistId && albumNameKey(row.name) === albumNameKey(link.artist));
+    if (artist) return {type:'artist', artist};
+  }
+  const kind = link.kind === 'artist' ? 'artists' : 'albums';
+  const result = await libraryPage(session, {kind,query,pageSize:100,signal});
+  if (!result.hasMore) {
+    if (kind === 'artists') {
+      const matches = result.artists.filter(row => albumNameKey(row.name) === albumNameKey(query));
+      if (matches.length === 1) return {type:'artist',artist:matches[0]};
+    } else {
+      const matches = result.albums.filter(row => albumNameKey(row.title) === albumNameKey(query) &&
+        albumNameKey(row.artist) === albumNameKey(link.artist));
+      if (matches.length === 1) return {type:'album',album:matches[0]};
+    }
+  }
+  return {type:'results',kind,query};
 }

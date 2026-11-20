@@ -17,7 +17,7 @@ const hooks = registerHooks({
     return next(specifier, context);
   },
 });
-const { albumTracks, libraryPage, searchMusicLibrary } = await import('../src/musicLibrary.ts');
+const { albumTracks, libraryPage, playbackDestination, searchMusicLibrary } = await import('../src/musicLibrary.ts');
 hooks.deregister();
 
 function session() {
@@ -45,6 +45,38 @@ const file = {
 function base() {
   return { page: 1, hasMore: false, total: 1, artists: [artist], albums: [album], tracks: [] as unknown[] };
 }
+
+test('playback links use the streamed release and respect guest artist credits', async (t) => {
+  const guest = { ...artist, id: 35, name: 'Guest' };
+  t.mock.method(globalThis, 'fetch', async (uri: string) => {
+    const url = new URL(uri);
+    if (url.pathname.endsWith('/bootstrap')) return Response.json({ api: {} });
+    if (url.searchParams.get('kind') === 'tracks') {
+      assert.equal(url.searchParams.get('albumId'), '12');
+      return Response.json(base());
+    }
+    assert.equal(url.searchParams.get('kind'), 'artists');
+    assert.equal(url.searchParams.get('query'), guest.name);
+    return Response.json({ ...base(), artists: [guest] });
+  });
+  const track = { artist: guest.name, albumName: 'Playlist title', streamPath: '/api/library/stream/12/50' };
+  const release = await playbackDestination(session(), { ...track, kind: 'album' });
+  assert.equal(release.type === 'album' && release.album.id, '12');
+  const credit = await playbackDestination(session(), { ...track, kind: 'artist' });
+  assert.equal(credit.type === 'artist' && credit.artist.id, '35');
+});
+
+test('playlist metadata opens an exact release or shows choices when more than one matches', async (t) => {
+  const albums = [album, { ...album, id: 13, artistId: 11 }];
+  t.mock.method(globalThis, 'fetch', async () => Response.json({
+    ...base(), artists: [artist, { ...artist, id: 11, name: 'Other band' }], albums,
+  }));
+  const link = { kind: 'album' as const, albumName: album.title, artist: artist.name, streamPath: null };
+  const match = await playbackDestination(session(), link);
+  assert.equal(match.type === 'album' && match.album.id, '12');
+  albums.push({ ...album, id: 14 });
+  assert.deepEqual(await playbackDestination(session(), link), { type: 'results', kind: 'albums', query: album.title });
+});
 
 test('canonical album and artist references share the authenticated server prefix and artwork rules', async (t) => {
   const requests: URL[] = [];

@@ -12,6 +12,7 @@ import { ExpiredSession, request } from './api';
 import { editQueue, type Playback } from './audio';
 import { serverResource, type Connection } from './connection';
 import { lyricsQuery, readLyrics, sungLine, type Lyrics } from './lyrics';
+import MetadataLink from './MetadataLink';
 import { Artwork, Button, color } from './TvControls';
 
 type Load = { loading: true } | { loading: false; lyrics: Lyrics | null; error?: string };
@@ -36,10 +37,12 @@ function Verse({ text, active, onSeek }: { text: string; active: boolean; onSeek
 export default function LyricsScreen({
   session,
   playback,
+  onOpenMetadata,
   onExpired,
 }: {
   session: Connection;
   playback: Playback;
+  onOpenMetadata: (kind: 'artist' | 'album') => void;
   onExpired: () => void;
 }) {
   const { width, height } = useWindowDimensions();
@@ -124,9 +127,8 @@ export default function LyricsScreen({
         <Text numberOfLines={3} style={s.title}>
           {playback.title}
         </Text>
-        <Text numberOfLines={2} style={s.artist}>
-          {playback.artist}
-        </Text>
+        <MetadataLink kind="artist" name={playback.artist} style={s.artist} onOpen={onOpenMetadata} />
+        <MetadataLink kind="album" name={playback.albumName} style={s.secondary} onOpen={onOpenMetadata} />
       </View>
       <View style={s.words}>
         <Text accessibilityRole="header" style={s.heading}>

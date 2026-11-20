@@ -5,7 +5,8 @@ import { audio, editQueue, play, type Playback } from './src/audio';
 import { serverAddress, type Connection, type Setup } from './src/connection';
 import { clearSession, getSession, saveSession } from './src/session';
 import { CollectionDetails, Library } from './src/LibraryScreen';
-import { MusicLibraryScreen } from './src/MusicLibraryScreen';
+import type { PlaybackLink } from './src/musicLibrary';
+import { LinkedMusicScreen, MusicLibraryScreen } from './src/MusicLibraryScreen';
 import LyricsScreen from './src/LyricsScreen';
 import PlayerScreen from './src/PlayerScreen';
 import { FlowPicker, QueueScreen } from './src/QueueScreen';
@@ -13,7 +14,7 @@ import SetupScreen from './src/SetupScreen';
 import { Artwork, Brand, Button, Icon, color } from './src/TvControls';
 import { usePocketRemote } from './src/usePocketRemote';
 
-type Page = 'music' | 'lyrics' | 'home' | 'tracks' | 'player' | 'queue' | 'flows' | 'remote' | 'settings';
+type Page = 'linked' | 'music' | 'lyrics' | 'home' | 'tracks' | 'player' | 'queue' | 'flows' | 'remote' | 'settings';
 function message(e: unknown) {
   return e instanceof Error ? e.message : 'Could not reach Aurral.';
 }
@@ -49,6 +50,8 @@ export default function App() {
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
   const activePair = useRef(false);
+  const [link, setLink] = useState<(PlaybackLink & { origin: 'player' | 'lyrics' }) | null>(null);
+  const linkedBack = useRef<(() => boolean) | null>(null);
   const musicBack = useRef<(() => boolean) | null>(null);
   const [musicSource, setMusicSource] = useState('Library');
 
@@ -140,6 +143,10 @@ export default function App() {
 
   const back = useCallback(() => {
     setError('');
+    if (page === 'linked') {
+      if (!linkedBack.current?.()) setPage(link?.origin ?? 'player');
+      return true;
+    }
     if (page === 'music' && musicBack.current?.()) return true;
     if (page === 'lyrics' || page === 'flows' || page === 'queue') {
       setPage(page === 'flows' ? 'queue' : 'player');
@@ -154,7 +161,7 @@ export default function App() {
       return true;
     }
     return false;
-  }, [page, parent]);
+  }, [page, parent, link]);
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', back);
     return () => sub.remove();
@@ -225,28 +232,49 @@ export default function App() {
   const currentCollection = catalog.find(c => c.id === playback?.collectionId) ??
     (playback?.collectionId === 'music-library' ? {id:'music-library',name:musicSource,kind:'Playlist' as const} : undefined);
   const playerVisible = page === 'player' && !!playback?.id;
-  const keepMusic = page === 'music' || (parent === 'music' && ['player','queue','flows','lyrics'].includes(page));
+  const keepMusic = page === 'music' || (parent === 'music' && ['player','queue','flows','lyrics','linked'].includes(page));
+  const openMetadata = (kind: PlaybackLink['kind']) => {
+    if (!playback) return;
+    setLink({kind, artist:playback.artist, albumName:playback.albumName, streamPath:playback.streamPath,
+      origin:page === 'lyrics' ? 'lyrics' : 'player'});
+    setPage('linked');
+  };
+  const musicActions = {
+    onPlay:async (items: api.Track[], index: number, source:string) => {
+      await play(session, 'music-library', items, index);
+      setPlayback(await audio.state());
+      setFromPocket(false);
+      setMusicSource(source || 'Library');
+      if (page === 'music') setParent('music');
+      setError('');
+      setPage('player');
+    },
+    onEnqueue:async (items: api.Track[], placement:'next'|'end') => {
+      if (!playback?.sessionId) throw new Error('Start playback to add to the queue.');
+      await editQueue(session,{sessionId:playback.sessionId,action:'enqueue',tracks:items,placement});
+    },
+  };
   const libraryPage = page === 'home' || page === 'tracks';
   return (
     <View style={playerVisible ? s.full : s.screen}>
       {playerVisible && playback ? <PlayerScreen session={session} playback={playback} fromPocket={fromPocket}
         collection={currentCollection} error={error} transport={transport} onBack={back}
-        onOpenLyrics={() => setPage('lyrics')} onOpenQueue={() => setPage('queue')} /> :
+        onOpenMetadata={openMetadata} onOpenLyrics={() => setPage('lyrics')} onOpenQueue={() => setPage('queue')} /> :
       <View style={s.header}>
         <Brand />
         <View style={s.actions}>
           {page === 'home' && <Button label="Library" icon="library" onPress={() => setPage('music')} />}
           {page !== 'home' && <Button label="Back" icon="back" onPress={back} />}
-          {(libraryPage || page === 'music') && playback?.id && (
+          {(libraryPage || page === 'music' || page === 'linked') && playback?.id && (
             <ReturnToPlayer
               session={session} playback={playback}
               onPress={() => {
-                setParent(page === 'music' ? 'music' : page === 'tracks' ? 'tracks' : 'home');
+                if (page !== 'linked') setParent(page === 'music' ? 'music' : page === 'tracks' ? 'tracks' : 'home');
                 setPage('player');
               }}
             />
           )}
-          {(libraryPage || page === 'music') && (
+          {(libraryPage || page === 'music' || page === 'linked') && (
             <Button label="Refresh" icon="refresh" iconOnly onPress={() => setRevision((n) => n + 1)} />
           )}
           {page === 'home' && <Button label="Settings" icon="settings" iconOnly onPress={() => setPage('settings')} />}
@@ -256,22 +284,12 @@ export default function App() {
         accessibilityElementsHidden={page !== 'music'} importantForAccessibility={page === 'music' ? 'auto' : 'no-hide-descendants'}>
         <MusicLibraryScreen session={session} active={page === 'music'} revision={revision} backRef={musicBack}
           canQueue={!!playback?.sessionId} onExpired={expire}
-          onPlay={async (items, index, source) => {
-            await play(session, 'music-library', items, index);
-            setPlayback(await audio.state());
-            setFromPocket(false);
-            setMusicSource(source || 'Library');
-            setParent('music');
-            setError('');
-            setPage('player');
-          }}
-          onEnqueue={async (items, placement) => {
-            if (!playback?.sessionId) throw new Error('Start playback to add to the queue.');
-            await editQueue(session,{sessionId:playback.sessionId,action:'enqueue',tracks:items,placement});
-          }} />
+          {...musicActions} />
       </View>}
-      {page === 'music' || playerVisible ? null : page === 'lyrics' && playback?.id ?
-        <LyricsScreen key={playback.currentEntryId ?? playback.id} session={session} playback={playback} onExpired={expire} /> :
+      {page === 'linked' && link ? <LinkedMusicScreen session={session} link={link} active revision={revision}
+        canQueue={!!playback?.sessionId} onExpired={expire} backRef={linkedBack} {...musicActions} /> :
+        page === 'music' || playerVisible ? null : page === 'lyrics' && playback?.id ?
+        <LyricsScreen key={playback.currentEntryId ?? playback.id} session={session} playback={playback} onOpenMetadata={openMetadata} onExpired={expire} /> :
         page === 'settings' ? (
         <View style={s.settings}>
           <Text accessibilityRole="header" style={s.heading}>Settings</Text>

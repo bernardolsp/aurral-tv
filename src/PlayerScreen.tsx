@@ -4,6 +4,7 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import type { Connection } from './connection';
 import type { Collection } from './api';
 import { audio, editQueue, type Playback } from './audio';
+import MetadataLink from './MetadataLink';
 import { Artwork, Button, Icon, color, timeLabel } from './TvControls';
 
 type Upcoming = Playback['upNext'][number];
@@ -69,7 +70,7 @@ function Progress({ playback, transport }: { playback: Playback; transport: (tas
   );
 }
 
-export default function PlayerScreen({ session, playback, fromPocket, collection, error, transport, onOpenQueue, onOpenLyrics, onBack }: {
+export default function PlayerScreen({ session, playback, fromPocket, collection, error, transport, onOpenQueue, onOpenLyrics, onOpenMetadata, onBack }: {
   session: Connection;
   playback: Playback;
   fromPocket?: boolean;
@@ -78,6 +79,7 @@ export default function PlayerScreen({ session, playback, fromPocket, collection
   transport: (task: Promise<void>) => void;
   onOpenQueue: () => void;
   onOpenLyrics: () => void;
+  onOpenMetadata: (kind: 'artist' | 'album') => void;
   onBack: () => void;
 }) {
   const { width, height } = useWindowDimensions();
@@ -112,8 +114,8 @@ export default function PlayerScreen({ session, playback, fromPocket, collection
         </View>
         <View style={s.identity}>
           <Text numberOfLines={3} style={[s.title, {fontSize: titleSize, lineHeight: titleSize * 1.06}]}>{playback.title || 'Unknown title'}</Text>
-          <Text numberOfLines={1} style={s.artist}>{playback.artist}</Text>
-          {!!playback.albumName && <Text numberOfLines={1} style={s.album}>{playback.albumName}</Text>}
+          <MetadataLink kind="artist" name={playback.artist} style={s.artist} onOpen={onOpenMetadata} />
+          <MetadataLink kind="album" name={playback.albumName} style={s.album} onOpen={onOpenMetadata} />
         </View>
         <Progress playback={playback} transport={transport} />
         <View style={s.transport}>

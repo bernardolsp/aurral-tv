@@ -9,10 +9,9 @@ android {
     testOptions.unitTests.returnDefaultValues = true
 }
 
-// Matches the HTTP client selected by React Native.
 dependencies {
-    implementation "com.squareup.okhttp3:okhttp:4.9.2"
+    implementation "androidx.media3:media3-exoplayer:1.9.0"
+    implementation "androidx.media3:media3-datasource-okhttp:1.9.0"
     testImplementation "junit:junit:4.13.2"
     testImplementation "com.squareup.okhttp3:mockwebserver:4.9.2"
-
 }

@@ -9,7 +9,19 @@ import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.functions.Queues
-import java.net.URI
+import expo.modules.kotlin.records.Field
+import expo.modules.kotlin.records.Record
+
+class QueueItem : Record {
+    @Field val id: String = ""
+    @Field val title: String = ""
+    @Field val artist: String = ""
+    @Field val streamPath: String = ""
+    @Field val transcode: Boolean = true
+    @Field val durationMs: Double? = null
+    @Field val albumName: String? = null
+    @Field val artworkPath: String? = null
+}
 
 class AurralAudioModule : Module() {
     private var service: PlaybackService? = null
@@ -31,7 +43,13 @@ class AurralAudioModule : Module() {
         return mapOf("id" to track?.id, "title" to track?.title, "artist" to track?.artist,
             "collectionId" to playback?.collectionId(), "playing" to (playback?.isPlaying ?: false),
             "previous" to (playback?.canSkip(-1) ?: false), "next" to (playback?.canSkip(1) ?: false),
-            "message" to playback?.message())
+            "message" to playback?.message(), "buffering" to (playback?.buffering() == true),
+            "durationMs" to playback?.durationMs()?.takeIf { it > 0 }, "positionMs" to (playback?.positionMs() ?: 0L),
+            "canSeek" to (playback?.canSeek() == true), "albumName" to track?.album, "artworkPath" to track?.artwork,
+            "upNext" to playback?.upcoming().orEmpty().map {
+                mapOf("id" to it.id, "title" to it.title, "artist" to it.artist,
+                    "albumName" to it.album, "artworkPath" to it.artwork)
+            })
     }
 
     override fun definition() = ModuleDefinition {
@@ -51,14 +69,24 @@ class AurralAudioModule : Module() {
             }
         }.runOnQueue(Queues.MAIN)
         AsyncFunction("state") { snapshot() }.runOnQueue(Queues.MAIN)
-        AsyncFunction("play") { server: String, headers: Map<String, String>, collection: String, items: List<Map<String, String>>, start: Int ->
-            val uri = URI(server)
-            require(uri.scheme in listOf("http","https") && uri.host != null && uri.userInfo == null && uri.query == null && uri.fragment == null)
-            require(start in items.indices)
-            val tracks = items.map { PlaybackService.Track(it.getValue("id"), it.getValue("title"), it.getValue("artist")) }
-            requireNotNull(service).play(server, headers, collection, tracks, start)
+        AsyncFunction("play") { server: String, headers: Map<String, String>, collection: String, items: List<QueueItem>, start: Int, positionMs: Double ->
+            require(start in items.indices && positionMs.isFinite() && positionMs >= 0)
+            val tracks = items.map {
+                PlaybackService.Track(it.id, it.title, it.artist, it.streamPath, it.transcode,
+                    it.durationMs?.toLong() ?: 0L, it.albumName, it.artworkPath)
+            }
+            requireNotNull(service).play(server, headers, collection, tracks, start, positionMs.toLong())
+        }.runOnQueue(Queues.MAIN)
+        AsyncFunction("pause") { service?.pause() }.runOnQueue(Queues.MAIN)
+        AsyncFunction("resume") { service?.resume() }.runOnQueue(Queues.MAIN)
+        AsyncFunction("seek") { ms: Double ->
+            require(ms.isFinite() && ms >= 0)
+            service?.seek(ms.toLong())
         }.runOnQueue(Queues.MAIN)
         AsyncFunction("toggle") { service?.toggle() }.runOnQueue(Queues.MAIN)
+        AsyncFunction("playUpcoming") { currentId: String, id: String ->
+            service?.playUpcoming(currentId, id)
+        }.runOnQueue(Queues.MAIN)
         AsyncFunction("skip") { step: Int -> require(step == 1 || step == -1); service?.skip(step) }.runOnQueue(Queues.MAIN)
         AsyncFunction("clear") { service?.clear() }.runOnQueue(Queues.MAIN)
         OnDestroy {

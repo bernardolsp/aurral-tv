@@ -41,7 +41,8 @@ export function openPhoneSetup(body: string, keys: Keys): Setup {
         typeof data.code !== 'string' || !/^[0-9A-HJKMNP-TV-Z]{10}$/.test(data.code)) {
       throw new Error('Invalid setup');
     }
-    return { serverUrl: serverAddress(data.serverUrl), code: data.code, customHeaders: proxyHeaders(data.customHeaders) };
+    if (data.remoteKey !== undefined && (typeof data.remoteKey !== "string" || !/^[a-f0-9]{64}$/.test(data.remoteKey))) throw new Error("Invalid remote pairing");
+    return { ...(data.remoteKey && {remoteKey: data.remoteKey}), serverUrl: serverAddress(data.serverUrl), code: data.code, customHeaders: proxyHeaders(data.customHeaders) };
   } finally {
     plaintext.fill(0);
   }

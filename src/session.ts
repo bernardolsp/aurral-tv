@@ -8,7 +8,7 @@ export async function getSession(): Promise<Connection | null> {
   try {
     const session = JSON.parse(value);
     if (typeof session.token !== 'string' || !session.token) throw new Error();
-    return {serverUrl: serverAddress(session.serverUrl), token: session.token, customHeaders: proxyHeaders(session.customHeaders)};
+    return { ...(typeof session.remoteKey === "string" && /^[a-f0-9]{64}$/.test(session.remoteKey) ? {remoteKey: session.remoteKey} : {}), serverUrl: serverAddress(session.serverUrl), token: session.token, customHeaders: proxyHeaders(session.customHeaders)};
   } catch {
     await SecureStore.deleteItemAsync(key);
     return null;

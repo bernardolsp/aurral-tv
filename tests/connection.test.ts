@@ -20,3 +20,15 @@ test('connection settings reject malformed origins and conflicting HTTP credenti
     assert.throws(() => proxyHeaders(headers));
   }
 });
+
+test('TV accepts only playlist and library audio paths from Pocket handoff', async () => {
+  const {audioStreamPath} = await import('../src/connection.ts');
+  for (const path of ['/library/stream/album%3A1/track', '/playlists/stream/job']) {
+    assert.equal(audioStreamPath({id: 'id', streamPath: path}), '/api' + path);
+    assert.equal(audioStreamPath({id: 'id', streamPath: '/api' + path}), '/api' + path);
+  }
+  for (const path of ['//outside.test/stream', 'https://outside.test/a', '/api/auth/me',
+    '/api/playlists/stream/%2e%2e', '/library/stream/a/track?token=other', '/api/playlists/stream/a%2fb']) {
+    assert.throws(() => audioStreamPath({id:'id', streamPath:path}));
+  }
+});

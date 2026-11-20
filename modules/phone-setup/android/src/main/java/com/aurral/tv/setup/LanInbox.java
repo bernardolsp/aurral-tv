@@ -110,7 +110,7 @@ final class LanInbox implements Closeable {
         String status = accepted ? "204 No Content" : "400 Bad Request";
         try {
             active.getOutputStream().write(("HTTP/1.1 " + status
-                + "\r\nConnection: close\r\nCache-Control: no-store\r\nContent-Length: 0\r\n\r\n")
+                + "\r\nX-Aurral-Remote: 1\r\nConnection: close\r\nCache-Control: no-store\r\nContent-Length: 0\r\n\r\n")
                 .getBytes(StandardCharsets.US_ASCII));
         } catch (IOException ignored) {
             // The phone may have disconnected. Do not consume another valid envelope with this key.

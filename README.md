@@ -8,6 +8,12 @@ Open **Pair with Pocket** on the TV. Scan the QR code with your phone, compare t
 
 For manual setup, choose **Enter server and pairing code**. Enter your Aurral server URL and a code generated in **Settings → Profile → Pair a device**. Servers behind a proxy requiring custom headers need Pocket setup. The TV streams completed playlist tracks in order. Choose **Disconnect** to remove the saved TV connection.
 
+## Play from Pocket
+
+Keep Aurral TV open and connect both devices to the same local network. If the TV was paired before Pocket remote support was available, choose **Pair Pocket remote** on the TV and confirm the new QR code in Pocket using the same Aurral account. In Pocket, open Now Playing, a playlist or a Flow and choose **Play on TV**. Transferring the current song includes its position and up to 100 playable queue items. The phone can pause, resume and skip. Pair again if the TV's LAN address changes.
+
+Now Playing shows album art and the next songs in play order. Press Down from Play/Pause to select an upcoming track. The TV requests MP3 at 320 kbps from servers that support transcoding. Known MP3 sources at or below 320 kbps keep their existing encoding.
+
 ## Build and install
 
 Use Node.js 24 or newer, the Android SDK, and a JDK compatible with the Expo SDK 58 Android toolchain. On an Android TV with developer mode and ADB enabled:

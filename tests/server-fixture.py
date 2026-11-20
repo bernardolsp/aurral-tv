@@ -6,6 +6,8 @@ import json
 import re
 import secrets
 import threading
+import subprocess
+from urllib.parse import urlsplit, parse_qs
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -26,6 +28,7 @@ cover = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQV
 
 
 class Fixture(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
     def log_message(self, format, *args):
         pass
 
@@ -67,19 +70,55 @@ class Fixture(BaseHTTPRequestHandler):
         elif self.path == '/api/auth/logout' and self.allowed(tv):
             self.send(200, {'success': True})
 
+    def transcode(self, params):
+        if params.get("format") != ["mp3"] or params.get("maxBitRate") != ["320"]:
+            self.send(400, {"error": "Expected MP3 at 320 kbps"})
+            return
+        try:
+            offset = float(params.get("timeOffset", ["0"])[0])
+            if not (0 <= offset < 40):
+                raise ValueError()
+        except ValueError:
+            self.send(400, {"error": "Invalid time offset"})
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "audio/mpeg")
+        self.send_header("Transfer-Encoding", "chunked")
+        self.end_headers()
+        # Match Aurral's ffmpeg pipe rather than returning a rangeable test file.
+        with subprocess.Popen(["ffmpeg", "-nostdin", "-loglevel", "error", "-f", "lavfi", "-i",
+                               "anullsrc=r=44100:cl=stereo", "-t", str(40 - offset),
+                               "-c:a", "libmp3lame", "-b:a", "320k", "-f", "mp3", "pipe:1"],
+                              stdout=subprocess.PIPE) as proc:
+            try:
+                while data := proc.stdout.read(16 * 1024):
+                    self.wfile.write(f"{len(data):x}\r\n".encode() + data + b"\r\n")
+                self.wfile.write(b"0\r\n\r\n")
+            except (ConnectionResetError, BrokenPipeError):
+                proc.terminate()
+        print(f"GET {self.path} 200 audio/mpeg chunked", flush=True)
+
     def do_GET(self):
         if not self.allowed(tv):
             return
-        if self.path == '/api/playlists/status':
+        url = urlsplit(self.path)
+        if url.path == '/api/health/bootstrap':
+            self.send(200, {'api': {'version': 2, 'features': ['streamTranscoding']}})
+        elif url.path == '/api/auth/me':
+            self.send(200, {'user': {'id': 1, 'username': 'fixture'}, 'expiresAt': 4000000000000})
+        elif url.path == '/api/playlists/status':
             self.send(200, {'staticPlaylists': [{'id': 'mix', 'name': 'After Hours'}],
                             'flows': [{'id': 'flow', 'name': 'Weekly Flow'}]})
         elif self.path.startswith('/api/playlists/jobs/'):
-            self.send(200, [{'id': 't1', 'trackName': 'Signal', 'artistName': 'Fixture', 'status': 'done'},
+            self.send(200, [{'id': 't1', 'trackName': 'Signal', 'artistName': 'Fixture', 'albumName': 'Test pressing', 'durationMs': 40000, 'streamFormat': 'flac', 'status': 'done'},
                             {'id': 't2', 'trackName': 'Night Drive', 'artistName': 'Fixture', 'status': 'done'},
                             {'id': 't3', 'trackName': 'Missing track', 'artistName': 'Fixture', 'status': 'saved'}])
         elif self.path.startswith('/api/playlists/artwork/'):
             self.send(200, cover, 'image/png')
-        elif self.path.startswith('/api/playlists/stream/'):
+        elif url.path.startswith(('/api/playlists/stream/', '/api/library/stream/')):
+            if url.query:
+                self.transcode(parse_qs(url.query))
+                return
             match = re.fullmatch(r'bytes=(\d+)-', self.headers.get('Range', ''))
             if match:
                 offset = int(match[1])

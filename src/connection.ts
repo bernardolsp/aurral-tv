@@ -1,4 +1,4 @@
-export type Setup = { serverUrl: string; code: string; customHeaders: Record<string, string> };
+export type Setup = { serverUrl: string; code: string; remoteKey?: string; customHeaders: Record<string, string> };
 export type Connection = Omit<Setup, 'code'> & { token: string };
 
 export function serverAddress(raw: string): string {
@@ -39,4 +39,20 @@ export function serverResource(session: Connection, path: string) {
   const uri = base + path;
   if (new URL(uri).origin !== new URL(base).origin) throw new Error('Invalid resource origin.');
   return { uri, headers: { ...proxyHeaders(session.customHeaders), Authorization: 'Bearer ' + session.token } };
+}
+
+/** Cast and API results carry paths, so the TV determines the origin and all query options itself. */
+export function audioStreamPath(track: { id: string; streamPath?: string | null }): string {
+  const incoming = track.streamPath ?? '/api/playlists/stream/' + encodeURIComponent(track.id);
+  const path = incoming.startsWith('/library/stream/') || incoming.startsWith('/playlists/stream/') ? '/api' + incoming : incoming;
+  const pattern = /^\/api\/(?:playlists\/stream\/([^/]+)|library\/stream\/([^/]+)\/([^/]+))$/;
+  const segments = pattern.exec(path)?.slice(1).filter((v): v is string => v !== undefined);
+  if (!segments) throw new Error('Invalid server audio path.');
+  for (const segment of segments) {
+    const decoded = decodeURIComponent(segment);
+    if (!decoded || decoded === '.' || decoded === '..' || /[\\/?#\x00-\x1f\x7f]/.test(decoded)) {
+      throw new Error('Invalid server audio path.');
+    }
+  }
+  return path;
 }

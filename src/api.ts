@@ -1,8 +1,13 @@
 import { fetch } from 'expo/fetch';
 import { proxyHeaders, serverAddress, serverResource, type Connection, type Setup } from './connection';
 
-export type Collection = { id: string; name: string; kind: 'Playlist' | 'Flow' };
-export type Track = { id: string; title: string; artist: string };
+import { albumArtworkPath, exactLibraryCover, playlistTracks, publicAlbumImage } from './playlistStreams';
+export type { Track } from './playlistStreams';
+
+export type Collection = {
+  id: string; name: string; kind: 'Playlist' | 'Flow'; trackCount?: number; description?: string;
+  streamTranscoding?: boolean;
+};
 export class ExpiredSession extends Error {}
 
 async function request(uri: string, headers: Record<string,string>, body?: object, signal?: AbortSignal) {
@@ -26,7 +31,7 @@ export async function pair(setup: Setup): Promise<Connection> {
   const response = await request(serverUrl + '/api/auth/pair', customHeaders, {code});
   const {token} = await response.json();
   if (typeof token !== 'string' || !token) throw new Error('The server returned an invalid session.');
-  return { serverUrl, customHeaders, token };
+  return { serverUrl, customHeaders, token, ...(setup.remoteKey && { remoteKey: setup.remoteKey }) };
 }
 
 async function get(session: Connection, path: string) {
@@ -34,27 +39,91 @@ async function get(session: Connection, path: string) {
   return (await request(uri, headers)).json();
 }
 
+export async function accountId(session: Connection): Promise<number> {
+  const me = await get(session, '/api/auth/me');
+  const id = me?.user?.id;
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error('Could not verify the Aurral account.');
+  return id;
+}
+
 export async function collections(session: Connection): Promise<Collection[]> {
-  const data = await get(session, '/api/playlists/status');
+  const [data, health] = await Promise.all([
+    get(session, '/api/playlists/status'),
+    get(session, '/api/health/bootstrap').catch(() => null),
+  ]);
+  const streamTranscoding = Array.isArray(health?.api?.features) && health.api.features.includes('streamTranscoding');
   return [
-    ...data.staticPlaylists.map((p: Collection) => ({id: p.id, name: p.name, kind: 'Playlist' as const})),
-    ...data.flows.map((p: Collection) => ({id: p.id, name: p.name, kind: 'Flow' as const})),
+    ...data.staticPlaylists.map((p: Collection) => ({
+      id: p.id, name: p.name, kind: 'Playlist' as const, trackCount: p.trackCount, description: p.description, streamTranscoding,
+    })),
+    ...data.flows.map((p: Collection) => ({
+      id: p.id, name: p.name, kind: 'Flow' as const, trackCount: data.flowStats?.[p.id]?.total, description: p.description, streamTranscoding,
+    })),
   ];
 }
 
-export async function tracks(session: Connection, collection: Collection): Promise<Track[]> {
-  const data: {id: string; trackName: string; artistName: string; status: string}[] =
-    await get(session, '/api/playlists/jobs/' + encodeURIComponent(collection.id));
-  return data.filter(t => t.status === 'done').map(t => ({id: t.id, title: t.trackName, artist: t.artistName}));
+export async function tracks(session: Connection, collection: Collection) {
+  const data = await get(session, '/api/playlists/jobs/' + encodeURIComponent(collection.id));
+  return playlistTracks(data, collection.streamTranscoding === true);
 }
 
-export async function cover(session: Connection, collectionId: string, signal: AbortSignal) {
-  const { uri, headers } = serverResource(session, '/api/playlists/artwork/' + encodeURIComponent(collectionId));
+export function cover(session: Connection, collectionId: string, signal: AbortSignal) {
+  return fetchCover(session, '/api/playlists/artwork/' + encodeURIComponent(collectionId), signal);
+}
+
+export async function trackCover(session: Connection, artworkPath: string, signal: AbortSignal) {
+  const safePath = albumArtworkPath(artworkPath);
+  if (!safePath) return null;
+  if (!safePath.startsWith('/api/artists/release-group/')) return fetchCover(session, safePath, signal);
+
+  // The image endpoint redirects. Read the same front-cover metadata as Pocket
+  // and start a separate, unauthenticated request for known public providers.
+  const resource = serverResource(session, safePath.slice(0, -'/image'.length));
+  const page = await (await request(resource.uri, resource.headers, undefined, signal)).json();
+  const images = Array.isArray(page?.images) ? page.images : [];
+  const raw = (images.find((img: {front?: boolean}) => img?.front) ?? images[0])?.image;
+  if (typeof raw !== 'string') return null;
+  const serverPrefix = session.serverUrl + '/api/';
+  const local = albumArtworkPath(raw.startsWith(serverPrefix) ? raw.slice(session.serverUrl.length) : raw);
+  if (local && !local.startsWith('/api/artists/release-group/')) return fetchCover(session, local, signal);
+  let url = publicAlbumImage(raw);
+  for (let attempt = 0; url && attempt < 4; attempt++) {
+    const response = await fetch(url, { credentials: 'omit', redirect: 'manual', signal });
+    if (response.status >= 300 && response.status < 400) {
+      url = publicAlbumImage(response.headers.get('location'), url);
+      await response.body?.cancel();
+    } else {
+      return response.ok ? readCover(response) : null;
+    }
+  }
+  return null;
+}
+
+export async function libraryAlbumCover(session: Connection, artist: string, album: string, signal: AbortSignal) {
+  const resource = serverResource(session, '/api/search/library');
+  const params = new URLSearchParams({ q: album, limit: '30' });
+  const result = await request(resource.uri + '?' + params, resource.headers, undefined, signal);
+  const page = await result.json();
+  const path = exactLibraryCover(page?.albums, artist, album);
+  return path ? fetchCover(session, path, signal) : null;
+}
+
+async function fetchCover(session: Connection, path: string, signal: AbortSignal) {
+  const at = path.indexOf('?');
+  const resource = serverResource(session, at < 0 ? path : path.slice(0, at));
+  const { headers } = resource;
+  const uri = resource.uri + (at < 0 ? '' : path.slice(at));
   const response = await request(uri, headers, undefined, signal);
-  const mime = response.headers.get('Content-Type')?.split(';')[0];
-  if (!mime || !['image/jpeg', 'image/png', 'image/webp'].includes(mime)) return null;
+  return readCover(response);
+}
+
+async function readCover(response: Awaited<ReturnType<typeof fetch>>) {
+  const mime = response.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase();
   const limit = 2 * 1024 * 1024;
-  if (Number(response.headers.get('Content-Length')) > limit) return null;
+  if (Number(response.headers.get('Content-Length')) > limit) {
+    await response.body?.cancel();
+    return null;
+  }
   const reader = response.body?.getReader();
   if (!reader) return null;
   let size = 0;
@@ -66,7 +135,12 @@ export async function cover(session: Connection, collectionId: string, signal: A
     if (size > limit) { await reader.cancel(); return null; }
     for (let i = 0; i < value.length; i += 8192) parts.push(String.fromCharCode(...value.subarray(i, i + 8192)));
   }
-  return 'data:' + mime + ';base64,' + btoa(parts.join(''));
+  const bytes = parts.join('');
+  const type = bytes.startsWith('\xff\xd8\xff') ? 'image/jpeg' :
+    bytes.startsWith('\x89PNG\r\n\x1a\n') ? 'image/png' :
+    bytes.startsWith('RIFF') && bytes.slice(8, 12) === 'WEBP' ? 'image/webp' : null;
+  if (!type || (mime && !mime.startsWith('image/') && mime !== 'application/octet-stream')) return null;
+  return 'data:' + type + ';base64,' + btoa(bytes);
 }
 
 export async function logout(session: Connection) {
